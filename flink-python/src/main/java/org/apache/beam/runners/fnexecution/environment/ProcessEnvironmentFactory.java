@@ -36,10 +36,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -132,6 +136,7 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
                             processPayload.getCommand(),
                             workerId);
                     LOG.info(watchProcessState(pid));
+                    LOG.info(getBootLog(processPayload.getEnvMap()));
                 } catch (InterruptedException interruptEx) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException(interruptEx);
@@ -147,6 +152,22 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
         }
 
         return ProcessEnvironment.create(processManager, environment, workerId, instructionHandler);
+    }
+
+    private String getBootLog(Map<String, String> envMap) throws IOException {
+        String log = envMap.get("BOOT_LOG_DIR") + "/flink-python-udf-boot.log";
+        File logFile = new File(log);
+        StringBuilder output = new StringBuilder();
+        BufferedReader br =
+                new BufferedReader(
+                        new InputStreamReader(
+                                new FileInputStream(logFile), StandardCharsets.UTF_8));
+        String line;
+        output.append("\n");
+        while ((line = br.readLine()) != null) {
+            output.append(line).append("\n");
+        }
+        return output.toString();
     }
 
     private static synchronized long getPidOfProcess(Process p) {
