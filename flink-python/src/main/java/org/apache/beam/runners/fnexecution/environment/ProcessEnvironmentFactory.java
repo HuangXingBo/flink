@@ -137,7 +137,7 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
                             workerId);
                     LOG.info(watchProcessState(pid));
                     LOG.info(getBootLog(processPayload.getEnvMap()));
-                    LOG.info(watchProcessState("beam_boot.py"));
+                    LOG.info(watchProcessState("beam_boot"));
                     LOG.info(watchProcessState("beam_sdk_worker_main"));
                 } catch (InterruptedException interruptEx) {
                     Thread.currentThread().interrupt();
