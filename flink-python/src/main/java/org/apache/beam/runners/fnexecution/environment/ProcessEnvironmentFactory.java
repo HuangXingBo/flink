@@ -137,6 +137,8 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
                             workerId);
                     LOG.info(watchProcessState(pid));
                     LOG.info(getBootLog(processPayload.getEnvMap()));
+                    LOG.info(watchProcessState("beam_boot.py"));
+                    LOG.info(watchProcessState("beam_sdk_worker_main"));
                 } catch (InterruptedException interruptEx) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException(interruptEx);
@@ -191,6 +193,26 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
             return "Wrong Pid";
         }
         String cmd = String.format("ps -ef | grep %s", pid);
+        Process process = new ProcessBuilder("bash", "-c", cmd).redirectErrorStream(true).start();
+
+        StringBuilder output = new StringBuilder();
+        BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        String line;
+        output.append("\n");
+        while ((line = br.readLine()) != null) {
+            output.append(line).append("\n");
+        }
+
+        // There should really be a timeout here.
+        if (0 != process.waitFor()) {
+            return null;
+        }
+
+        return output.toString();
+    }
+
+    private String watchProcessState(String key) throws IOException, InterruptedException {
+        String cmd = String.format("ps -ef | grep %s", key);
         Process process = new ProcessBuilder("bash", "-c", cmd).redirectErrorStream(true).start();
 
         StringBuilder output = new StringBuilder();
