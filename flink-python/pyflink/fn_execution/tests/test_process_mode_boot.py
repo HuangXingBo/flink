@@ -22,7 +22,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import unittest
 
 import grpc
 from apache_beam.portability.api.beam_provision_api_pb2 import (ProvisionInfo,
@@ -92,16 +91,16 @@ class PythonBootTests(PyFlinkTestCase):
         exit_code = self.run_boot_py()
         self.assertTrue(exit_code == 0, "the boot.py exited with non-zero code.")
 
-    @unittest.skipIf(on_windows(), "'subprocess.check_output' in Windows always return empty "
-                                   "string, skip this test.")
-    def test_param_validation(self):
-        args = [self.runner_path]
-        exit_message = subprocess.check_output(args, env=self.env).decode("utf-8")
-        self.assertIn("No id provided.", exit_message)
-
-        args = [self.runner_path, "--id", "1"]
-        exit_message = subprocess.check_output(args, env=self.env).decode("utf-8")
-        self.assertIn("No provision endpoint provided.", exit_message)
+    # @unittest.skipIf(on_windows(), "'subprocess.check_output' in Windows always return empty "
+    #                                "string, skip this test.")
+    # def test_param_validation(self):
+    #     args = [self.runner_path]
+    #     exit_message = subprocess.check_output(args, env=self.env).decode("utf-8")
+    #     self.assertIn("No id provided.", exit_message)
+    #
+    #     args = [self.runner_path, "--id", "1"]
+    #     exit_message = subprocess.check_output(args, env=self.env).decode("utf-8")
+    #     self.assertIn("No provision endpoint provided.", exit_message)
 
     def test_set_working_directory(self):
         JProcessPythonEnvironmentManager = \
