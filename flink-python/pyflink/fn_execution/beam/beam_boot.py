@@ -94,8 +94,11 @@ if __name__ == "__main__":
 
         # read job information from provision stub
         with grpc.insecure_channel(provision_endpoint) as channel:
+            logging.info("try to connect grpc provision service")
             client = ProvisionServiceStub(channel=channel)
+            logging.info("create provision client")
             info = client.GetProvisionInfo(GetProvisionInfoRequest(), metadata=metadata).info
+            logging.info("get provision service")
             options = json_format.MessageToJson(info.pipeline_options)
             logging_endpoint = info.logging_endpoint.url
             control_endpoint = info.control_endpoint.url
@@ -114,5 +117,7 @@ if __name__ == "__main__":
             logging.info("Shut down Python harness due to FLINK_BOOT_TESTING is set.")
             exit(0)
 
+        logging.info("start beam_sdk_worker_main process")
         call([python_exec, "-m", "pyflink.fn_execution.beam.beam_sdk_worker_main"],
              stdout=sys.stdout, stderr=sys.stderr, env=env)
+        logging.info("finish beam_sdk_worker_main process")
