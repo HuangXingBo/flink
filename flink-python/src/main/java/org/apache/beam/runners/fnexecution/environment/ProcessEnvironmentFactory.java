@@ -159,6 +159,9 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
     private String getBootLog(Map<String, String> envMap) throws IOException {
         String log = envMap.get("BOOT_LOG_DIR") + "/flink-python-udf-boot.log";
         File logFile = new File(log);
+        if (!logFile.exists()) {
+            return "";
+        }
         StringBuilder output = new StringBuilder();
         BufferedReader br =
                 new BufferedReader(
