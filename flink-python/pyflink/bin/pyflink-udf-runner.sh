@@ -41,3 +41,4 @@ fi
 
 log="$BOOT_LOG_DIR/flink-python-udf-boot.log"
 ${python} -m pyflink.fn_execution.beam.beam_boot $@ 2>&1
+exit 0

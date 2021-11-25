@@ -121,3 +121,4 @@ if __name__ == "__main__":
         call([python_exec, "-m", "pyflink.fn_execution.beam.beam_sdk_worker_main"],
              stdout=sys.stdout, stderr=sys.stderr, env=env)
         logging.info("finish beam_sdk_worker_main process")
+        exit(0)
