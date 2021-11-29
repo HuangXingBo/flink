@@ -138,6 +138,7 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
                     LOG.info(watchProcessState(pid));
                     LOG.info(getBootLog(processPayload.getEnvMap()));
                     LOG.info(watchProcessState("beam_boot"));
+                    killBeamBoot();
                     LOG.info(watchProcessState("beam_sdk_worker_main"));
                 } catch (InterruptedException interruptEx) {
                     Thread.currentThread().interrupt();
@@ -154,6 +155,36 @@ public class ProcessEnvironmentFactory implements EnvironmentFactory {
         }
 
         return ProcessEnvironment.create(processManager, environment, workerId, instructionHandler);
+    }
+
+    private void killBeamBoot() throws IOException, InterruptedException {
+        String cmd =
+                "ps -ef | grep 'python -m pyflink.fn_execution.beam.beam_boot' | grep -v grep | awk '{print $2}'";
+        Process process = new ProcessBuilder("bash", "-c", cmd).redirectErrorStream(true).start();
+
+        StringBuilder output = new StringBuilder();
+        BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        String line;
+        while ((line = br.readLine()) != null) {
+            output.append(line).append(" ");
+        }
+
+        // There should really be a timeout here.
+        if (0 != process.waitFor()) {
+            return;
+        }
+
+        String[] res = output.toString().split(" ");
+        LOG.info("num " + res.length);
+        for (String re : res) {
+            LOG.info("beam_boot id " + re);
+            cmd = "kill -s USR1 " + re;
+            process = new ProcessBuilder("bash", "-c", cmd).redirectErrorStream(true).start();
+            // There should really be a timeout here.
+            if (0 != process.waitFor()) {
+                return;
+            }
+        }
     }
 
     private String getBootLog(Map<String, String> envMap) throws IOException {

@@ -52,8 +52,11 @@ def check_not_empty(check_str, error_message):
 
 python_exec = sys.executable
 
-
 if __name__ == "__main__":
+    import faulthandler
+    import signal
+
+    faulthandler.register(signal.SIGUSR1, file=sys.stdout)
     # print INFO and higher level messages
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
@@ -121,4 +124,3 @@ if __name__ == "__main__":
         call([python_exec, "-m", "pyflink.fn_execution.beam.beam_sdk_worker_main"],
              stdout=sys.stdout, stderr=sys.stderr, env=env)
         logging.info("finish beam_sdk_worker_main process")
-        exit(0)
