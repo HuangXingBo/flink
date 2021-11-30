@@ -77,6 +77,7 @@ if __name__ == "__main__":
     check_not_empty(worker_id, "No id provided.")
     check_not_empty(provision_endpoint, "No provision endpoint provided.")
 
+    logging.info("PID: " + str(os.getpid()))
     logging.info("Initializing Python harness: %s" % " ".join(sys.argv))
 
     if 'PYFLINK_LOOPBACK_SERVER_ADDRESS' in os.environ:
