@@ -241,6 +241,7 @@ jobs:
           else
             echo "This is a regular CI build. Continuing ..."
           fi
+        shell: bash
 
   e2e:
     name: "E2E (group ${{ matrix.group }})"

@@ -41,6 +41,7 @@ jobs:
         run: |
           source ./tools/azure-pipelines/build_properties.sh
           pr_contains_docs_changes
+        shell: bash
 
       - name: "Builds docs"
         run: ./tools/ci/docs.sh
