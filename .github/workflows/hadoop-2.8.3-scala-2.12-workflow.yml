@@ -32,7 +32,7 @@ jobs:
   docs-404-check:
     runs-on: ubuntu-latest
     container:
-      image: chesnay/flink-ci:java_8_11
+      image: chesnay/flink-ci:java_8_11_v2
     steps:
       - name: "Checks out Flink"
         uses: actions/checkout@v2
