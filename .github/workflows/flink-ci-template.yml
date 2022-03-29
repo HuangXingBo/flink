@@ -65,8 +65,8 @@ jobs:
 
       - name: "Set JDK version"
         run: |
-        JAVA_HOME=$JAVA_HOME_${{inputs.jdk-version}}_X64
-        PATH=$JAVA_HOME_${{inputs.jdk-version}}_X64/bin:$PATH
+          JAVA_HOME=$JAVA_HOME_${{inputs.jdk-version}}_X64
+          PATH=$JAVA_HOME_${{inputs.jdk-version}}_X64/bin:$PATH
 
       - name: "Flink Checkout"
         uses: actions/checkout@v2
