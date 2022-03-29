@@ -48,6 +48,30 @@ env:
   CHECKOUT_DIR: ${{ github.workspace }}/flink-checkout
 
 jobs:
+  qa:
+    name: "Basic QA"
+    runs-on: ubuntu-latest
+    container:
+      image: chesnay/flink-ci:java_8_11
+
+    steps:
+    - name: "Set JDK version"
+      run: |
+        JAVA_HOME=$JAVA_HOME_${{inputs.jdk-version}}_X64
+        PATH=$JAVA_HOME_${{inputs.jdk-version}}_X64/bin:$PATH
+
+    - name: "Flink Checkout"
+      uses: actions/checkout@v2
+      with:
+        path: ${{ env.CHECKOUT_DIR }}
+
+    - name: "Validate Flink"
+      working-directory: ${{ env.CHECKOUT_DIR }}
+      env:
+        MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
+      run: |
+        ${{ inputs.environment }} ./tools/ci/validate.sh || exit $?
+
   compile:
     name: "Compile"
     runs-on: ubuntu-latest
