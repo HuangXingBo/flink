@@ -183,8 +183,14 @@ jobs:
         with:
           path: ${{ env.CHECKOUT_DIR }}
 
-      - name: "Set coredump pattern"
+      - name: "Copy"
         working-directory: ${{ env.CHECKOUT_DIR }}
+        run: |
+          mkdir -p /root/flink
+          mv ./* /root/flink/
+
+      - name: "Set coredump pattern"
+        working-directory: /root/flink
         run: sudo sysctl -w kernel.core_pattern=core.%p
 
       - name: "Download build artifacts from compile job"
@@ -194,7 +200,7 @@ jobs:
           path: ${{ env.FLINK_ARTIFACT_DIR }}
 
       - name: "Unpack build artifact"
-        working-directory: ${{ env.CHECKOUT_DIR }}
+        working-directory: /root/flink
         run: |
           ./tools/azure-pipelines/unpack_build_artifact.sh -f ${{ env.FLINK_ARTIFACT_DIR }}${{ env.FLINK_ARTIFACT_FILENAME }} -t .
 
@@ -215,12 +221,12 @@ jobs:
 
       - name: "Load Docker images if not present in cache, yet"
         if: ${{ !cancelled() && !steps.docker-cache.cache.hit }}
-        working-directory: ${{ env.CHECKOUT_DIR }}
+        working-directory: /root/flink
         run: ./tools/azure-pipelines/cache_docker_images.sh -f ${{ env.DOCKER_IMAGES_CACHE_FOLDER }} load
 
       - name: "Test - ${{ matrix.module }}"
         id: test-run
-        working-directory: ${{ env.CHECKOUT_DIR }}
+        working-directory: /root/flink
         env:
           MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
           IT_CASE_S3_BUCKET: ${{ secrets.s3_bucket }}
@@ -237,7 +243,7 @@ jobs:
               ./tools/ci/test_controller.sh ${{ matrix.module }}
 
       - name: "Post-process build artifacts"
-        working-directory: ${{ env.CHECKOUT_DIR }}
+        working-directory: /root/flink
         run: find ${{ steps.test-run.outputs.debug-files-output-dir }} -type f -exec rename 's/[:<>|*?]/-/' {} \;
 
       - name: "Publish Unit Test Results"
@@ -255,7 +261,7 @@ jobs:
           path: ${{ steps.test-run.outputs.debug-files-output-dir }}
 
       - name: "Save Docker images to cache"
-        working-directory: ${{ env.CHECKOUT_DIR }}
+        working-directory: /root/flink
         if: ${{ !cancelled() && (failure() || !steps.docker-cache.cache.hit) }}
         run: ./tools/azure-pipelines/cache_docker_images.sh -f ${{ env.DOCKER_IMAGES_CACHE_FOLDER }} save
 
