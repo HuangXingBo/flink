@@ -204,13 +204,6 @@ jobs:
         run: |
           ./tools/azure-pipelines/unpack_build_artifact.sh -f ${{ env.FLINK_ARTIFACT_DIR }}${{ env.FLINK_ARTIFACT_FILENAME }} -t .
 
-      - name: "Load local Maven repository from Cache"
-        uses: actions/cache@v2
-        with:
-          path: ${{ env.MAVEN_REPOSITORY_DIR }}
-          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml', '!**/target/**') }}
-          restore-keys: maven-${{ runner.os }}
-
       - name: "Try loading Docker images from Cache"
         id: docker-cache
         uses: actions/cache@v2
