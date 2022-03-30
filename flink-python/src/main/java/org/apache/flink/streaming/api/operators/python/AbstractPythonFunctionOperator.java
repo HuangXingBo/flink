@@ -291,8 +291,14 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
     private void checkInvokeFinishBundleByTime() throws Exception {
         long now = getProcessingTimeService().getCurrentProcessingTime();
         if (now - lastFinishBundleTime >= maxBundleTimeMills) {
+            boolean needLog = false;
+            if (elementCount > 0) {
+                needLog = true;
+            }
             invokeFinishBundle();
-            LOG.info(String.format("latency is %s ms", System.currentTimeMillis() - startTime));
+            if (needLog) {
+                LOG.info(String.format("latency is %s ms", System.currentTimeMillis() - startTime));
+            }
         }
     }
 

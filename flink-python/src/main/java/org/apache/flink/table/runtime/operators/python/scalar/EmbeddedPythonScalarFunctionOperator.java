@@ -234,9 +234,7 @@ public class EmbeddedPythonScalarFunctionOperator
             rowDataWrapper.collect(reuseResultRowData);
         }
         if (recordsNum % 1000 == 0) {
-            long time = System.currentTimeMillis() - start;
-            totalTime += time;
-            LOG.info(String.format("1000 time %d totalTime %d", time, totalTime));
+            totalTime += System.currentTimeMillis() - start;
         }
         if (recordsNum == maxBundleSize) {
             LOG.info(String.format("latency is %d ms", totalTime / maxBundleSize * 1000));
