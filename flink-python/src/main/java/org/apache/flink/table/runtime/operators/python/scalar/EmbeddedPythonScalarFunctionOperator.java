@@ -91,8 +91,6 @@ public class EmbeddedPythonScalarFunctionOperator
     /** Records num. */
     private transient int recordsNum;
 
-    private transient long startTime;
-
     private transient double totalTime;
 
     public EmbeddedPythonScalarFunctionOperator(
@@ -194,9 +192,10 @@ public class EmbeddedPythonScalarFunctionOperator
     @SuppressWarnings("unchecked")
     @Override
     public void processElement(StreamRecord<RowData> element) {
+        long start = 0;
         recordsNum++;
         if (recordsNum % 1000 == 0) {
-            startTime = System.currentTimeMillis();
+            start = System.currentTimeMillis();
         }
         RowData value = element.getValue();
 
@@ -235,7 +234,7 @@ public class EmbeddedPythonScalarFunctionOperator
             rowDataWrapper.collect(reuseResultRowData);
         }
         if (recordsNum % 1000 == 0) {
-            totalTime += System.currentTimeMillis() - startTime;
+            totalTime += (System.currentTimeMillis() - start);
         }
         if (recordsNum == maxBundleSize) {
             LOG.info(String.format("latency is %s ms", totalTime / ((double) recordsNum / 1000)));
