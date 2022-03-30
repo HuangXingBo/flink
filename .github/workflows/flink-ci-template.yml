@@ -39,10 +39,10 @@ on:
         required: false
 
 env:
-  FLINK_ARTIFACT_DIR: ${{ github.workspace }}/
+  FLINK_ARTIFACT_DIR: /root/
   FLINK_ARTIFACT_FILENAME: flink_artifacts.tar.gz
-  MAVEN_REPOSITORY_DIR: ${{ github.workspace }}/.m2/repository
-  DOCKER_IMAGES_CACHE_FOLDER: ${{ github.workspace }}/.docker-cache
+  MAVEN_REPOSITORY_DIR: /root/.m2/repository
+  DOCKER_IMAGES_CACHE_FOLDER: /root/.docker-cache
   # The checkout directory needs to be changed for the Composite Github action usages below as
   # well, if this env variable is modified
   CHECKOUT_DIR: ${{ github.workspace }}/flink-checkout
@@ -128,7 +128,6 @@ jobs:
         with:
           name: build-artifacts-${{ steps.workflow-prep-step.outputs.stringified-workflow-name }}-${{ github.run_number }}
           path: ${{ env.FLINK_ARTIFACT_DIR }}${{ env.FLINK_ARTIFACT_FILENAME }}
-          if-no-files-found: error
 
   test:
     name: "Test (module: ${{ matrix.module }})"
@@ -177,7 +176,8 @@ jobs:
 
       - name: "Unpack build artifact"
         working-directory: ${{ env.CHECKOUT_DIR }}
-        run: ./tools/azure-pipelines/unpack_build_artifact.sh -f ${{ env.FLINK_ARTIFACT_DIR }}/${{ env.FLINK_ARTIFACT_FILENAME }} -t ${{ env.CHECKOUT_DIR }}
+        run: |
+          ./tools/azure-pipelines/unpack_build_artifact.sh -f ${{ env.FLINK_ARTIFACT_DIR }}${{ env.FLINK_ARTIFACT_FILENAME }} -t .
 
       - name: "Load local Maven repository from Cache"
         uses: actions/cache@v2
