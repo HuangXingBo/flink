@@ -241,7 +241,7 @@ jobs:
         run: ./tools/azure-pipelines/cache_docker_images.sh -f ${{ env.DOCKER_IMAGES_CACHE_FOLDER }} save
 
   e2e-prereq-check:
-    name: "Check: Doc-only PR"
+    name: "Check: Code modified"
     needs: compile
     runs-on: ubuntu-latest
     container:
