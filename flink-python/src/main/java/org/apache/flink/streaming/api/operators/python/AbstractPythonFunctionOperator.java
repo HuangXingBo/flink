@@ -75,6 +75,8 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
     /** Callback to be executed after the current bundle was finished. */
     protected transient Runnable bundleFinishedCallback;
 
+    protected transient long startTime;
+
     public AbstractPythonFunctionOperator(Configuration config) {
         this.config = Preconditions.checkNotNull(config);
         this.chainingStrategy = ChainingStrategy.ALWAYS;
@@ -122,6 +124,7 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
                                     timestamp -> checkInvokeFinishBundleByTime(),
                                     bundleCheckPeriod,
                                     bundleCheckPeriod);
+            startTime = System.currentTimeMillis();
         } finally {
             super.open();
         }
@@ -279,7 +282,6 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
     /** Checks whether to invoke finishBundle by elements count. Called in processElement. */
     protected void checkInvokeFinishBundleByCount() throws Exception {
         if (elementCount >= maxBundleSize) {
-            long startTime = System.currentTimeMillis();
             invokeFinishBundle();
             LOG.info(String.format("latency is %s ms", System.currentTimeMillis() - startTime));
         }
@@ -290,6 +292,7 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
         long now = getProcessingTimeService().getCurrentProcessingTime();
         if (now - lastFinishBundleTime >= maxBundleTimeMills) {
             invokeFinishBundle();
+            LOG.info(String.format("latency is %s ms", System.currentTimeMillis() - startTime));
         }
     }
 

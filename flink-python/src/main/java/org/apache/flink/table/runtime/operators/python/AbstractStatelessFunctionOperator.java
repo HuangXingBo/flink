@@ -94,6 +94,9 @@ public abstract class AbstractStatelessFunctionOperator<IN, OUT, UDFIN>
 
     @Override
     public void processElement(StreamRecord<IN> element) throws Exception {
+        if (elementCount == 0) {
+            startTime = System.currentTimeMillis();
+        }
         IN value = element.getValue();
         bufferInput(value);
         processElementInternal(value);
