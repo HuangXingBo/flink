@@ -88,6 +88,11 @@ public class EmbeddedPythonScalarFunctionOperator
     /** Whether is only one field of udf result. */
     private transient boolean isOneFieldResult;
 
+    /** Records num. */
+    private transient int recordsNum;
+
+    private transient long startTime;
+
     public EmbeddedPythonScalarFunctionOperator(
             Configuration config,
             PythonFunctionInfo[] scalarFunctions,
@@ -146,6 +151,7 @@ public class EmbeddedPythonScalarFunctionOperator
                     forwardedFieldGeneratedProjection.newInstance(
                             Thread.currentThread().getContextClassLoader());
         }
+        recordsNum = 0;
     }
 
     @Override
@@ -185,6 +191,9 @@ public class EmbeddedPythonScalarFunctionOperator
     @SuppressWarnings("unchecked")
     @Override
     public void processElement(StreamRecord<RowData> element) {
+        if (recordsNum == 999) {
+            startTime = System.currentTimeMillis();
+        }
         RowData value = element.getValue();
 
         Object udfArgs = null;
@@ -220,6 +229,11 @@ public class EmbeddedPythonScalarFunctionOperator
             rowDataWrapper.collect(reuseJoinedRow);
         } else {
             rowDataWrapper.collect(reuseResultRowData);
+        }
+        recordsNum++;
+        if (recordsNum == 1000) {
+            LOG.info(String.format("latency is %s ms", System.currentTimeMillis() - startTime));
+            recordsNum = 0;
         }
     }
 

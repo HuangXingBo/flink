@@ -156,11 +156,14 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
 
     @Override
     public void prepareSnapshotPreBarrier(long checkpointId) throws Exception {
+        long start = System.currentTimeMillis();
         try {
             invokeFinishBundle();
         } finally {
             super.prepareSnapshotPreBarrier(checkpointId);
         }
+        long end = System.currentTimeMillis();
+        LOG.info(String.format("Checkpoint progress takes %s ms", end - start));
     }
 
     @Override
@@ -276,7 +279,9 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
     /** Checks whether to invoke finishBundle by elements count. Called in processElement. */
     protected void checkInvokeFinishBundleByCount() throws Exception {
         if (elementCount >= maxBundleSize) {
+            long startTime = System.currentTimeMillis();
             invokeFinishBundle();
+            LOG.info(String.format("latency is %s ms", System.currentTimeMillis() - startTime));
         }
     }
 
