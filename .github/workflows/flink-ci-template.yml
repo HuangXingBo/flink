@@ -45,7 +45,8 @@ env:
   DOCKER_IMAGES_CACHE_FOLDER: /root/.docker-cache
   # The checkout directory needs to be changed for the Composite Github action usages below as
   # well, if this env variable is modified
-  CHECKOUT_DIR: ${{ github.workspace }}/flink-checkout
+  CHECKOUT_MOUNT_DIR: ${{ github.workspace }}/flink-checkout
+  CHECKOUT_DIR: /root/flink
 
 jobs:
   qa:
@@ -57,30 +58,30 @@ jobs:
     steps:
     - name: "Set JDK version"
       run: |
-        JAVA_HOME=$JAVA_HOME_${{inputs.jdk-version}}_X64
-        PATH=$JAVA_HOME_${{inputs.jdk-version}}_X64/bin:$PATH
+        echo "JAVA_HOME=$JAVA_HOME_${{inputs.jdk-version}}_X64" >> ${GITHUB_ENV}
+        echo "PATH=$JAVA_HOME_${{inputs.jdk-version}}_X64/bin:$PATH" >> ${GITHUB_ENV}
 
     - name: "Flink Checkout"
       uses: actions/checkout@v2
       with:
-        path: ${{ env.CHECKOUT_DIR }}
+        path: ${{ env.CHECKOUT_MOUNT_DIR }}
 
     - name: "Checkstyle"
-      working-directory: ${{ env.CHECKOUT_DIR }}
+      working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
       env:
         MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
       run: |
         ${{ inputs.environment }} ./tools/ci/validate.sh checkstyle:check || exit $?
 
     - name: "Spotless"
-      working-directory: ${{ env.CHECKOUT_DIR }}
+      working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
       env:
         MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
       run: |
         ${{ inputs.environment }} ./tools/ci/validate.sh spotless:check || exit $?
 
     - name: "Rat"
-      working-directory: ${{ env.CHECKOUT_DIR }}
+      working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
       env:
         MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
       run: |
@@ -109,7 +110,13 @@ jobs:
       - name: "Flink Checkout"
         uses: actions/checkout@v2
         with:
-          path: ${{ env.CHECKOUT_DIR }}
+          path: ${{ env.CHECKOUT_MOUNT_DIR }}
+
+      - name: "Copy"
+        working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
+        run: |
+          mkdir -p ${{ env.CHECKOUT_DIR }}
+          mv ./* ${{ env.CHECKOUT_DIR }}/
 
       # The cache task is persisting the .m2 directory between builds, so that
       # we do not have to re-download all dependencies from maven central for
@@ -181,16 +188,16 @@ jobs:
       - name: "Flink Checkout"
         uses: actions/checkout@v2
         with:
-          path: ${{ env.CHECKOUT_DIR }}
+          path: ${{ env.CHECKOUT_MOUNT_DIR }}
 
       - name: "Copy"
-        working-directory: ${{ env.CHECKOUT_DIR }}
+        working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
         run: |
-          mkdir -p /root/flink
-          mv ./* /root/flink/
+          mkdir -p ${{ env.CHECKOUT_DIR }}
+          mv ./* ${{ env.CHECKOUT_DIR }}/
 
       - name: "Set coredump pattern"
-        working-directory: /root/flink
+        working-directory: ${{ env.CHECKOUT_DIR }}
         run: sudo sysctl -w kernel.core_pattern=core.%p
 
       - name: "Download build artifacts from compile job"
@@ -200,7 +207,7 @@ jobs:
           path: ${{ env.FLINK_ARTIFACT_DIR }}
 
       - name: "Unpack build artifact"
-        working-directory: /root/flink
+        working-directory: ${{ env.CHECKOUT_DIR }}
         run: |
           ./tools/azure-pipelines/unpack_build_artifact.sh -f ${{ env.FLINK_ARTIFACT_DIR }}${{ env.FLINK_ARTIFACT_FILENAME }} -t .
 
@@ -214,12 +221,12 @@ jobs:
 
       - name: "Load Docker images if not present in cache, yet"
         if: ${{ !cancelled() && !steps.docker-cache.cache.hit }}
-        working-directory: /root/flink
+        working-directory: ${{ env.CHECKOUT_DIR }}
         run: ./tools/azure-pipelines/cache_docker_images.sh -f ${{ env.DOCKER_IMAGES_CACHE_FOLDER }} load
 
       - name: "Test - ${{ matrix.module }}"
         id: test-run
-        working-directory: /root/flink
+        working-directory: ${{ env.CHECKOUT_DIR }}
         env:
           MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
           IT_CASE_S3_BUCKET: ${{ secrets.s3_bucket }}
@@ -236,7 +243,7 @@ jobs:
               ./tools/ci/test_controller.sh ${{ matrix.module }}
 
       - name: "Post-process build artifacts"
-        working-directory: /root/flink
+        working-directory: ${{ env.CHECKOUT_DIR }}
         run: find ${{ steps.test-run.outputs.debug-files-output-dir }} -type f -exec rename 's/[:<>|*?]/-/' {} \;
 
       - name: "Publish Unit Test Results"
@@ -254,7 +261,7 @@ jobs:
           path: ${{ steps.test-run.outputs.debug-files-output-dir }}
 
       - name: "Save Docker images to cache"
-        working-directory: /root/flink
+        working-directory: ${{ env.CHECKOUT_DIR }}
         if: ${{ !cancelled() && (failure() || !steps.docker-cache.cache.hit) }}
         run: ./tools/azure-pipelines/cache_docker_images.sh -f ${{ env.DOCKER_IMAGES_CACHE_FOLDER }} save
 
@@ -303,10 +310,21 @@ jobs:
         group: [1, 2]
 
     steps:
+      - name: "Set JDK version"
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_${{inputs.jdk-version}}_X64" >> ${GITHUB_ENV}
+          echo "PATH=$JAVA_HOME_${{inputs.jdk-version}}_X64/bin:$PATH" >> ${GITHUB_ENV}
+
       - name: "Flink Checkout"
         uses: actions/checkout@v2
         with:
-          path: ${{ env.CHECKOUT_DIR }}
+          path: ${{ env.CHECKOUT_MOUNT_DIR }}
+
+      - name: "Copy"
+        working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
+        run: |
+          mkdir -p ${{ env.CHECKOUT_DIR }}
+          mv ./* ${{ env.CHECKOUT_DIR }}/
 
       - name: "Download build artifacts from compile job"
         uses: actions/download-artifact@v2
@@ -326,13 +344,6 @@ jobs:
           mkdir -p ${{ env.E2E_CACHE_FOLDER }}
           mkdir -p ${{ env.E2E_TARBALL_CACHE }}
           mkdir -p ${{ env.DOCKER_IMAGES_CACHE_FOLDER }}
-
-      - name: "Load local Maven repository from Cache"
-        uses: actions/cache@v2
-        with:
-          path: ${{ env.MAVEN_REPOSITORY_DIR }}
-          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml', '!**/target/**') }}
-          restore-keys: maven-${{ runner.os }}
 
       - name: "Load E2E files from Cache"
         uses: actions/cache@v2
