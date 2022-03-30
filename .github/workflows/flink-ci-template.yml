@@ -159,6 +159,11 @@ jobs:
             stringified-module-name: finegrained_resource_management
 
     steps:
+      - name: "Set JDK version"
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_${{inputs.jdk-version}}_X64" >> ${GITHUB_ENV}
+          echo "PATH=$JAVA_HOME_${{inputs.jdk-version}}_X64/bin:$PATH" >> ${GITHUB_ENV}
+
       - name: "Flink Checkout"
         uses: actions/checkout@v2
         with:
