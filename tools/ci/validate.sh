@@ -34,5 +34,5 @@ source "${CI_DIR}/maven-utils.sh"
 echo "Maven version:"
 run_mvn -version
 
-run_mvn clean validate -Denforcer.skip=true -T2
+run_mvn ${1}
 

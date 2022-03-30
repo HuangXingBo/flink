@@ -65,12 +65,26 @@ jobs:
       with:
         path: ${{ env.CHECKOUT_DIR }}
 
-    - name: "Validate Flink"
+    - name: "Checkstyle"
       working-directory: ${{ env.CHECKOUT_DIR }}
       env:
         MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
       run: |
-        ${{ inputs.environment }} ./tools/ci/validate.sh || exit $?
+        ${{ inputs.environment }} ./tools/ci/validate.sh checkstyle:check || exit $?
+
+    - name: "Spotless"
+      working-directory: ${{ env.CHECKOUT_DIR }}
+      env:
+        MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
+      run: |
+        ${{ inputs.environment }} ./tools/ci/validate.sh spotless:check || exit $?
+
+    - name: "Rat"
+      working-directory: ${{ env.CHECKOUT_DIR }}
+      env:
+        MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
+      run: |
+        ${{ inputs.environment }} ./tools/ci/validate.sh "org.apache.rat:apache-rat-plugin:check -N" || exit $?
 
   compile:
     name: "Compile"
