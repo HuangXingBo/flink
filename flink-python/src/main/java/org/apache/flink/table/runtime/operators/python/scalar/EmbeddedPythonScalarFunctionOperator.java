@@ -238,9 +238,7 @@ public class EmbeddedPythonScalarFunctionOperator
             totalTime += System.currentTimeMillis() - startTime;
         }
         if (recordsNum == maxBundleSize) {
-            LOG.info(
-                    String.format(
-                            "latency is %s ms", totalTime / ((double) maxBundleSize / recordsNum)));
+            LOG.info(String.format("latency is %s ms", totalTime / ((double) recordsNum / 1000)));
             totalTime = 0.0;
             recordsNum = 0;
         }
