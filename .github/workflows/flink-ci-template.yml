@@ -128,6 +128,7 @@ jobs:
         with:
           name: build-artifacts-${{ steps.workflow-prep-step.outputs.stringified-workflow-name }}-${{ github.run_number }}
           path: ${{ env.FLINK_ARTIFACT_DIR }}/${{ env.FLINK_ARTIFACT_FILENAME }}
+          if-no-files-found: error
 
   test:
     name: "Test (module: ${{ matrix.module }})"
