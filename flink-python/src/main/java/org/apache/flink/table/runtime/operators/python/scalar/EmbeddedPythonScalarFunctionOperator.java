@@ -91,7 +91,7 @@ public class EmbeddedPythonScalarFunctionOperator
     /** Records num. */
     private transient int recordsNum;
 
-    private transient double totalTime;
+    private transient long totalTime;
 
     public EmbeddedPythonScalarFunctionOperator(
             Configuration config,
@@ -152,7 +152,7 @@ public class EmbeddedPythonScalarFunctionOperator
                             Thread.currentThread().getContextClassLoader());
         }
         recordsNum = 0;
-        totalTime = 0.0;
+        totalTime = 0;
     }
 
     @Override
@@ -234,11 +234,13 @@ public class EmbeddedPythonScalarFunctionOperator
             rowDataWrapper.collect(reuseResultRowData);
         }
         if (recordsNum % 1000 == 0) {
-            totalTime += (System.currentTimeMillis() - start);
+            long time = System.currentTimeMillis() - start;
+            totalTime += time;
+            LOG.info(String.format("1000 time %d totalTime %d", time, totalTime));
         }
         if (recordsNum == maxBundleSize) {
-            LOG.info(String.format("latency is %f ms", totalTime / maxBundleSize * 1000));
-            totalTime = 0.0;
+            LOG.info(String.format("latency is %d ms", totalTime / maxBundleSize * 1000));
+            totalTime = 0;
             recordsNum = 0;
         }
     }
