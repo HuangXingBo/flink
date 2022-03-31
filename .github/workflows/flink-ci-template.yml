@@ -302,8 +302,8 @@ jobs:
     if: ${{ needs.e2e-prereq-check.outputs.skip-e2e != 'true' }}
     timeout-minutes: 310
     env:
-      E2E_CACHE_FOLDER: ${{ github.workspace }}/.e2e-cache
-      E2E_TARBALL_CACHE: ${{ github.workspace }}/.e2e-tarbal-cache
+      E2E_CACHE_FOLDER: /root/.e2e-cache
+      E2E_TARBALL_CACHE: /root/.e2e-tarbal-cache
     strategy:
       fail-fast: false
       matrix:
