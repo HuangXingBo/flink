@@ -81,6 +81,7 @@ import org.apache.flink.shaded.guava30.com.google.common.collect.Iterables;
 
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -349,6 +350,8 @@ public class CheckpointCoordinatorTest extends TestLogger {
     }
 
     @Test
+    @Ignore(
+            "Unstable because getNumberOfPendingCheckpoints() can return 1 before the target location was set")
     public void testMinCheckpointPause() throws Exception {
         // will use a different thread to allow checkpoint triggering before exiting from
         // receiveAcknowledgeMessage
