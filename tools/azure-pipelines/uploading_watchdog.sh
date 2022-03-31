@@ -87,9 +87,9 @@ WATCHDOG_PID=$!
 ( $COMMAND & PID=$! ; echo $PID >$MAIN_PID_FILE ; wait $PID ) | ts | tee $DEBUG_FILES_OUTPUT_DIR/watchdog
 TEST_EXIT_CODE=${PIPESTATUS[0]}
 
+kill $WATCHDOG_PID
 # successful execution, cleanup watchdog related things
 if [[ "$TEST_EXIT_CODE" == 0 ]]; then
-  kill $WATCHDOG_PID
   rm $DEBUG_FILES_OUTPUT_DIR/watchdog
   rm -f $DEBUG_FILES_OUTPUT_DIR/jps-traces.*
 fi
