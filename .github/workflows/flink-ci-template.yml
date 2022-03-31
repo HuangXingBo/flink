@@ -53,7 +53,7 @@ jobs:
     name: "Basic QA"
     runs-on: ubuntu-latest
     container:
-      image: chesnay/flink-ci:java_8_11_m2_v1
+      image: chesnay/flink-ci:java_8_11_xenial
 
     steps:
     - name: "Set JDK version"
@@ -91,7 +91,7 @@ jobs:
     name: "Compile"
     runs-on: ubuntu-latest
     container:
-      image: chesnay/flink-ci:java_8_11_m2_v1
+      image: chesnay/flink-ci:java_8_11_xenial
     timeout-minutes: 240
     outputs:
       stringified-workflow-name: ${{ steps.workflow-prep-step.outputs.stringified-workflow-name }}
@@ -155,7 +155,7 @@ jobs:
     needs: compile
     runs-on: ubuntu-latest
     container:
-      image: chesnay/flink-ci:java_8_11_m2_v1
+      image: chesnay/flink-ci:java_8_11_xenial
     strategy:
       fail-fast: false
       matrix:
@@ -270,7 +270,7 @@ jobs:
     needs: compile
     runs-on: ubuntu-latest
     container:
-      image: chesnay/flink-ci:java_8_11_m2_v1
+      image: chesnay/flink-ci:java_8_11_xenial
     outputs:
       skip-e2e: ${{ steps.docs-only-pr-check.skip-e2e }}
     steps:
@@ -298,7 +298,7 @@ jobs:
     needs: [compile, e2e-prereq-check]
     runs-on: ubuntu-latest
     container:
-      image: chesnay/flink-ci:java_8_11_m2_v1
+      image: chesnay/flink-ci:java_8_11_xenial
     if: ${{ needs.e2e-prereq-check.outputs.skip-e2e != 'true' }}
     timeout-minutes: 310
     env:
