@@ -372,7 +372,7 @@ jobs:
 
       - name: "Build Flink"
         working-directory: ${{ env.CHECKOUT_DIR }}
-        run: ${{ inputs.environment }} PROFILE="$PROFILE -Dfast -Pskip-webui-build" ./tools/ci/compile.sh
+        run: ${{ inputs.environment }} ./tools/ci/validate.sh "package -DskipTests -Dfast $PROFILE -Pskip-webui-build"
 
       - name: "Run E2E Tests"
         id: test-run
