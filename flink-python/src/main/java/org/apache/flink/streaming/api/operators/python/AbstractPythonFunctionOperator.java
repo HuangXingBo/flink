@@ -282,8 +282,12 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
     /** Checks whether to invoke finishBundle by elements count. Called in processElement. */
     protected void checkInvokeFinishBundleByCount() throws Exception {
         if (elementCount >= maxBundleSize) {
+            long elementNum = elementCount;
             invokeFinishBundle();
-            LOG.info(String.format("latency is %s ms", System.currentTimeMillis() - startTime));
+            LOG.info(
+                    String.format(
+                            "latency is %d ms, invoke by count with elementCount %d",
+                            System.currentTimeMillis() - startTime, elementNum));
         }
     }
 
@@ -291,13 +295,17 @@ public abstract class AbstractPythonFunctionOperator<OUT> extends AbstractStream
     private void checkInvokeFinishBundleByTime() throws Exception {
         long now = getProcessingTimeService().getCurrentProcessingTime();
         if (now - lastFinishBundleTime >= maxBundleTimeMills) {
+            long elementNum = elementCount;
             boolean needLog = false;
             if (elementCount > 0) {
                 needLog = true;
             }
             invokeFinishBundle();
             if (needLog) {
-                LOG.info(String.format("latency is %s ms", System.currentTimeMillis() - startTime));
+                LOG.info(
+                        String.format(
+                                "latency is %d ms, invoke by time with elementCount %d",
+                                System.currentTimeMillis() - startTime, elementNum));
             }
         }
     }
