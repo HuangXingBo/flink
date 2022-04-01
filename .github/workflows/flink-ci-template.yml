@@ -206,8 +206,6 @@ jobs:
             stringified-module-name: core
           - module: python
             stringified-module-name: python
-          - module: libraries
-            stringified-module-name: libraries
           - module: table
             stringified-module-name: table
           - module: connectors
