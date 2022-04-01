@@ -76,6 +76,7 @@ function wait_elasticsearch_working {
     done
 
     echo "Elasticsearch node is not working"
+    cat $TEST_DATA_DIR/elasticsearch/logs/elasticsearch.log
     exit 1
 }
 
