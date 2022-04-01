@@ -66,21 +66,14 @@ jobs:
       with:
         path: ${{ env.CHECKOUT_MOUNT_DIR }}
 
-    - name: "Checkstyle"
+    - name: "Code Style"
       working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
       env:
         MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
       run: |
-        ${{ inputs.environment }} ./tools/ci/validate.sh checkstyle:check || exit $?
+        ${{ inputs.environment }} ./tools/ci/validate.sh "checkstyle:check spotless:check" || exit $?
 
-    - name: "Spotless"
-      working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
-      env:
-        MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
-      run: |
-        ${{ inputs.environment }} ./tools/ci/validate.sh spotless:check || exit $?
-
-    - name: "Rat"
+    - name: "License Headers"
       working-directory: ${{ env.CHECKOUT_MOUNT_DIR }}
       env:
         MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
