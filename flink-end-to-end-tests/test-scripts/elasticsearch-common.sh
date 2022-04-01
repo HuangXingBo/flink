@@ -52,10 +52,12 @@ function setup_elasticsearch {
 
     adduser --disabled-password --gecos "" elasticsearch
     chown -R elasticsearch $elasticsearchDir
+    chmod -R 755 $elasticsearchDir
 
     # start Elasticsearch cluster
-    chmod +x $elasticsearchDir/bin/elasticsearch
-    su elasticsearch $elasticsearchDir/bin/elasticsearch &
+    pushd $elasticsearchDir
+    su -c bin/elasticsearch elasticsearch &
+    popd
 }
 
 function wait_elasticsearch_working {
