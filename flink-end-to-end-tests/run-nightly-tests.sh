@@ -226,6 +226,9 @@ function run_group_3 {
 
 }
 
+apt-get install libtcmalloc-minimal4
+export LD_PRELOAD="/usr/lib/libtcmalloc_minimal.so.4"
+
 if [ "$1" == "1" ]; then
     run_group_1
 elif [ "$1" == "2" ]; then
