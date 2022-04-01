@@ -91,7 +91,10 @@ function jm_watchdog() {
     while true; do
         local RUNNING_JMS=`jps | grep "${PROCESS_NAME}" | wc -l`;
         local MISSING_JMS=$((EXPECTED_JMS-RUNNING_JMS))
+        echo "R: $RUNNING_JMS M: $MISSING_JMS"
+        echo $(jps | grep "${PROCESS_NAME}")
         for (( c=0; c<MISSING_JMS; c++ )); do
+            echo "starting new JM"
             ${@:3}
         done
         sleep 1;
