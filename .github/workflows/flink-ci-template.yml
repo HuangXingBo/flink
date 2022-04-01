@@ -238,7 +238,7 @@ jobs:
         run: |
           ${{ inputs.environment }} ./tools/azure-pipelines/uploading_watchdog.sh \
               -a ${{ github.job }} \
-              -d ${{ runner.temp }} \
+              -d ${{ env.FLINK_ARTIFACT_DIR }} \
               -t 240 \
               ./tools/ci/test_controller.sh ${{ matrix.module }}
 
@@ -255,7 +255,7 @@ jobs:
 
       - name: "Upload build artifacts"
         uses: actions/upload-artifact@v2
-        if: ${{ steps.test-run.outputs.debug-files-output-dir }} != ''
+        if: ${{ (success() || failure()) && steps.test-run.outputs.debug-files-output-dir }} != ''
         with:
           name: logs-test-${{ needs.compile.outputs.stringified-workflow-name }}-${{ github.run_number }}-${{ matrix.stringified-module-name }}-${{ steps.test-run.outputs.debug-files-name }}
           path: ${{ steps.test-run.outputs.debug-files-output-dir }}
@@ -388,13 +388,13 @@ jobs:
         run: |
           ${{ inputs.environment }} FLINK_DIR=`pwd`/build-target ./tools/azure-pipelines/uploading_watchdog.sh \
             -a ${{ github.job }} \
-            -d ${{ runner.temp }} \
+            -d ${{ env.FLINK_ARTIFACT_DIR }} \
             -t 310 \
             flink-end-to-end-tests/run-nightly-tests.sh ${{ matrix.group }}
 
       - name: "Upload Logs"
         uses: actions/upload-artifact@v2
-        if: ${{ steps.test-run.outputs.debug-files-output-dir }} != ''
+        if: ${{ (success() || failure()) && steps.test-run.outputs.debug-files-output-dir }} != ''
         with:
           name: logs-e2e-${{ needs.compile.outputs.stringified-workflow-name }}-${{ github.run_number }}-${{ matrix.group }}-${{ steps.test-run.outputs.debug-files-name }}
           path: ${{ steps.test-run.outputs.debug-files-output-dir }}
