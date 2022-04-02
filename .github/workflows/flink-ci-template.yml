@@ -131,7 +131,7 @@ jobs:
         env:
           MAVEN_OPTS: " -Dmaven.repo.local=${{ env.MAVEN_REPOSITORY_DIR }}"
         run: |
-          ${{ inputs.environment }} ./tools/ci/validate.sh "test-compile -T2 -Pskip-webui-build -Dfast" || exit $?
+          ${{ inputs.environment }} ./tools/ci/validate.sh "test-compile -T2 -Dfast" || exit $?
 
       - name: "Collect build artifacts"
         working-directory: ${{ env.CHECKOUT_DIR }}
