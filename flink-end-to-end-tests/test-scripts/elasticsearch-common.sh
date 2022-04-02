@@ -56,7 +56,7 @@ function setup_elasticsearch {
 
     # start Elasticsearch cluster
     pushd $elasticsearchDir
-    su -c bin/elasticsearch elasticsearch &
+    su -c bash -X bin/elasticsearch elasticsearch &
     popd
 }
 
