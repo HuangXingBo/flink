@@ -93,7 +93,7 @@ function jm_watchdog() {
         local MISSING_JMS=$((EXPECTED_JMS-RUNNING_JMS))
         echo "R: $RUNNING_JMS M: $MISSING_JMS"
         echo $(jps | grep "${PROCESS_NAME}")
-        ps aux | grep 'java'
+        ps -ef | grep 'defunct'
         for (( c=0; c<MISSING_JMS; c++ )); do
             echo "starting new JM"
             ${@:3}
