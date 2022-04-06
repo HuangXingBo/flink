@@ -101,8 +101,6 @@ fi
 # =============================================================================
 
 if [ $STAGE == $STAGE_PYTHON ]; then
-    apt-get install libtcmalloc-minimal4
-    export LD_PRELOAD="/usr/lib/libtcmalloc_minimal.so.4"
 	sed -i "s/\(^appender\.file\.fileName = \).*$/\1\$\{sys:log\.file\}/g" ${HERE}/log4j.properties
 	run_with_watchdog "./flink-python/dev/lint-python.sh" $CALLBACK_ON_TIMEOUT
 	EXIT_CODE=$?

@@ -33,17 +33,17 @@ CURRENT_DIR="$(cd "$( dirname "$0" )" && pwd)"
 # FLINK_PYTHON_DIR is "flink/flink-python"
 FLINK_PYTHON_DIR=$(dirname "$CURRENT_DIR")
 
-# test common module
-test_module "common"
-
-# test datastream module
-test_module "datastream"
-
-# test fn_execution module
-test_module "fn_execution"
-
-# test metrics module
-test_module "metrics"
+## test common module
+#test_module "common"
+#
+## test datastream module
+#test_module "datastream"
+#
+## test fn_execution module
+#test_module "fn_execution"
+#
+## test metrics module
+#test_module "metrics"
 
 # test table module
 test_module "table"
