@@ -975,9 +975,3 @@ class CodeGeneratorContext(val tableConfig: ReadableConfig) {
     fieldTerm
   }
 }
-
-object CodeGeneratorContext {
-  def apply(tableConfig: ReadableConfig): CodeGeneratorContext = {
-    new CodeGeneratorContext(tableConfig)
-  }
-}

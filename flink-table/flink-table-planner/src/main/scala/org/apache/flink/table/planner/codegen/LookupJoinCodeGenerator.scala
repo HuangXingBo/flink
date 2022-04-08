@@ -171,7 +171,7 @@ object LookupJoinCodeGenerator {
       udf,
       functionName)
 
-    val ctx = CodeGeneratorContext(tableConfig)
+    val ctx = new CodeGeneratorContext(tableConfig)
     val operands = prepareOperands(
       ctx,
       inputType,
@@ -437,7 +437,7 @@ object LookupJoinCodeGenerator {
     val input2Term = DEFAULT_INPUT2_TERM
     val outTerm = "resultCollection"
 
-    val ctx = CodeGeneratorContext(tableConfig)
+    val ctx = new CodeGeneratorContext(tableConfig)
 
     val body = if (condition.isEmpty) {
       "getResultFuture().complete(records);"

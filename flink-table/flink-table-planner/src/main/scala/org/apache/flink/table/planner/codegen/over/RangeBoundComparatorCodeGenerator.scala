@@ -59,7 +59,7 @@ class RangeBoundComparatorCodeGenerator(
     val input = CodeGenUtils.DEFAULT_INPUT1_TERM
     val current = CodeGenUtils.DEFAULT_INPUT2_TERM
 
-    val ctx = CodeGeneratorContext(tableConfig)
+    val ctx = new CodeGeneratorContext(tableConfig)
 
     val inputExpr = GenerateUtils.generateFieldAccess(ctx, inputType, inputTerm = input, key)
     val currentExpr = GenerateUtils.generateFieldAccess(ctx, inputType, inputTerm = current, key)
@@ -142,7 +142,7 @@ class RangeBoundComparatorCodeGenerator(
     val relKeyType = typeFactory.createFieldTypeFromLogicalType(realKeyType)
 
     //minus between inputValue and currentValue
-    val ctx = CodeGeneratorContext(tableConfig)
+    val ctx = new CodeGeneratorContext(tableConfig)
     val exprCodeGenerator = new ExprCodeGenerator(ctx, false)
     val minusCall = if (keyOrder) {
       relBuilder.call(
