@@ -23,12 +23,12 @@ import org.apache.flink.table.planner.plan.utils.RankUtil
 import org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig
 import org.apache.flink.table.runtime.operators.rank.{ConstantRankRange, ConstantRankRangeWithoutEnd, RankType}
 
-import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall, RelOptUtil}
+import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.rel.`type`.RelDataTypeField
 import org.apache.calcite.rex.{RexInputRef, RexProgramBuilder, RexUtil}
-import org.apache.calcite.sql.fun.SqlStdOperatorTable
 import org.apache.calcite.sql.{SqlKind, SqlRankFunction}
+import org.apache.calcite.sql.fun.SqlStdOperatorTable
 
 import scala.collection.JavaConversions._
 

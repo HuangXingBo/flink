@@ -25,6 +25,11 @@ import org.apache.flink.table.planner.plan.nodes.{FlinkConventions, FlinkRelNode
 import org.apache.flink.table.planner.plan.utils.IntervalJoinUtil
 import org.apache.flink.table.planner.utils.ShortcutUtils.unwrapTableConfig
 
+import org.apache.flink.table.planner.plan.utils.{FlinkRelOptUtil, IntervalJoinUtil}
+import org.apache.flink.table.planner.utils.ShortcutUtils
+import org.apache.flink.table.planner.utils.ShortcutUtils.unwrapContext
+
+import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall, RelTraitSet}
 import org.apache.calcite.plan.RelOptRule.{any, operand}
 import org.apache.calcite.plan.{RelOptRule, RelOptRuleCall, RelTraitSet}
 import org.apache.calcite.rel.RelNode

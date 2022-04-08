@@ -184,6 +184,8 @@ class StreamCommonSubGraphBasedOptimizer(planner: StreamPlanner)
       def getMiniBatchInterval: MiniBatchInterval = miniBatchInterval
 
       override def needFinalTimeIndicatorConversion: Boolean = isSinkBlock
+
+      override def getClassLoader: ClassLoader = context.getClassLoader
     })
   }
 

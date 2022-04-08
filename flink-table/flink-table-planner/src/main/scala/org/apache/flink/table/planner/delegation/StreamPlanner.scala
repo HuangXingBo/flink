@@ -55,9 +55,10 @@ class StreamPlanner(
     tableConfig: TableConfig,
     moduleManager: ModuleManager,
     functionCatalog: FunctionCatalog,
-    catalogManager: CatalogManager)
+    catalogManager: CatalogManager,
+    classLoader: ClassLoader)
   extends PlannerBase(executor, tableConfig, moduleManager, functionCatalog, catalogManager,
-    isStreamingMode = true) {
+    isStreamingMode = true, classLoader) {
 
   override protected def getTraitDefs: Array[RelTraitDef[_ <: RelTrait]] = {
     Array(
@@ -131,7 +132,8 @@ class StreamPlanner(
   private def createDummyPlanner(): StreamPlanner = {
     val dummyExecEnv = new DummyStreamExecutionEnvironment(getExecEnv)
     val executor = new DefaultExecutor(dummyExecEnv)
-    new StreamPlanner(executor, tableConfig, moduleManager, functionCatalog, catalogManager)
+    new StreamPlanner(executor, tableConfig, moduleManager, functionCatalog, catalogManager,
+      classLoader)
   }
 
   override def loadPlan(planReference: PlanReference): InternalPlan = {

@@ -297,9 +297,7 @@ object StreamTableEnvironmentImpl {
       executionEnvironment: StreamExecutionEnvironment,
       settings: EnvironmentSettings)
     : StreamTableEnvironmentImpl = {
-
-    // temporary solution until FLINK-15635 is fixed
-    val classLoader = Thread.currentThread.getContextClassLoader
+    val classLoader = settings.getUserClassLoader
 
     val executor = AbstractStreamTableEnvironmentImpl.lookupExecutor(
       classLoader, executionEnvironment.getWrappedStreamExecutionEnvironment)
@@ -321,10 +319,10 @@ object StreamTableEnvironmentImpl {
       .executionConfig(executionEnvironment.getConfig)
       .build
 
-    val functionCatalog = new FunctionCatalog(tableConfig, catalogManager, moduleManager)
+    val functionCatalog = new FunctionCatalog(tableConfig, catalogManager, moduleManager, classLoader)
 
     val planner = PlannerFactoryUtil.createPlanner(
-      executor, tableConfig, moduleManager, catalogManager, functionCatalog)
+      executor, tableConfig, classLoader, moduleManager, catalogManager, functionCatalog)
 
     new StreamTableEnvironmentImpl(
       catalogManager,

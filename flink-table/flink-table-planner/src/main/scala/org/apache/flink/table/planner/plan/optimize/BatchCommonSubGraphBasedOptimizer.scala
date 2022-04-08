@@ -103,6 +103,8 @@ class BatchCommonSubGraphBasedOptimizer(planner: BatchPlanner)
       override def getFlinkRelBuilder: FlinkRelBuilder = planner.getRelBuilder
 
       override def needFinalTimeIndicatorConversion: Boolean = true
+
+      override def getClassLoader: ClassLoader = context.getClassLoader
     })
   }
 

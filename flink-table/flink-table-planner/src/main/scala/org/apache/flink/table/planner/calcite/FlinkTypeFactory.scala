@@ -50,7 +50,8 @@ import scala.collection.mutable
   * Flink specific type factory that represents the interface between Flink's [[LogicalType]]
   * and Calcite's [[RelDataType]].
   */
-class FlinkTypeFactory(typeSystem: RelDataTypeSystem = FlinkTypeSystem.INSTANCE)
+class FlinkTypeFactory(classLoader: ClassLoader,
+                       typeSystem: RelDataTypeSystem = FlinkTypeSystem.INSTANCE)
   extends JavaTypeFactoryImpl(typeSystem)
   with ExtendedRelTypeFactory {
 
@@ -357,7 +358,7 @@ class FlinkTypeFactory(typeSystem: RelDataTypeSystem = FlinkTypeSystem.INSTANCE)
 
   override def createRawType(className: String, serializerString: String): RelDataType = {
     val rawType = RawType.restore(
-      FlinkTypeFactory.getClass.getClassLoader, // temporary solution until FLINK-15635 is fixed
+      classLoader,
       className,
       serializerString)
     val rawRelDataType = createFieldTypeFromLogicalType(rawType)

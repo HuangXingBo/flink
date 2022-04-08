@@ -59,7 +59,8 @@ class RexNodeExtractorTest extends RexNodeTestBase {
   private val functionCatalog = new FunctionCatalog(
     TableConfig.getDefault,
     catalogManager,
-    moduleManager)
+    moduleManager,
+    classOf[RexNodeExtractorTest].getClassLoader)
 
   @Test
   def testExtractRefInputFields(): Unit = {
