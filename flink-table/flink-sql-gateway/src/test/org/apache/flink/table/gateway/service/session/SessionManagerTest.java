@@ -57,12 +57,13 @@ public class SessionManagerTest {
         sessionManager =
                 new SessionManager(
                         new DefaultContext(conf, Collections.singletonList(new DefaultCLI())));
+        sessionManager.start();
     }
 
     @After
     public void cleanUp() {
         if (sessionManager != null) {
-            sessionManager.close();
+            sessionManager.stop();
         }
     }
 

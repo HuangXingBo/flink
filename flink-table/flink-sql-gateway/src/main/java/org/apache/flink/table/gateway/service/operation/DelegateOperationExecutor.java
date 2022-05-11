@@ -16,9 +16,8 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.gateway.service.execution;
+package org.apache.flink.table.gateway.service.operation;
 
-import org.apache.flink.runtime.security.contexts.SecurityContext;
 import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
 import org.apache.flink.table.gateway.service.result.ExecutionResult;
 import org.apache.flink.table.planner.plan.metadata.FlinkDefaultRelMetadataProvider;
@@ -30,7 +29,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.function.Supplier;
 
 /**
@@ -39,21 +37,19 @@ import java.util.function.Supplier;
  * complex actions.
  */
 public final class DelegateOperationExecutor implements OperationExecutor {
+
     private static final Logger LOG = LoggerFactory.getLogger(DelegateOperationExecutor.class);
 
     private final OperationExecutor delegator;
     private final ClassLoader classLoader;
-    private final SecurityContext securityContext;
 
-    protected DelegateOperationExecutor(
-            OperationExecutor delegator, ClassLoader classLoader, SecurityContext securityContext) {
+    DelegateOperationExecutor(OperationExecutor delegator, ClassLoader classLoader) {
         this.delegator = delegator;
         this.classLoader = classLoader;
-        this.securityContext = securityContext;
     }
 
     @Override
-    public Future<ExecutionResult> executeStatement(String statement) {
+    public ExecutionResult executeStatement(String statement) {
         return wrapClassLoader(() -> delegator.executeStatement(statement));
     }
 
@@ -66,22 +62,9 @@ public final class DelegateOperationExecutor implements OperationExecutor {
             // same, the threadlocal cache may have been cleaned up, so need reload the class.
             RelMetadataQueryBase.THREAD_PROVIDERS.set(
                     JaninoRelMetadataProvider.of(FlinkDefaultRelMetadataProvider.INSTANCE()));
-            return securityContext.runSecured(supplier::get);
+            return supplier.get();
         } catch (Exception e) {
             throw new SqlGatewayException("Failed to execute operation", e);
-        }
-    }
-
-    /**
-     * Executes the given runner using the execution context's classloader as thread classloader.
-     */
-    private void wrapClassLoader(Runnable runner) {
-        try (TemporaryClassLoaderContext ignored = TemporaryClassLoaderContext.of(classLoader)) {
-            // The creation thread of TableEnvironmentInternal and execution thread are not the
-            // same, the threadlocal cache may have been cleaned up, so need reload the class.
-            RelMetadataQueryBase.THREAD_PROVIDERS.set(
-                    JaninoRelMetadataProvider.of(FlinkDefaultRelMetadataProvider.INSTANCE()));
-            runner.run();
         }
     }
 }

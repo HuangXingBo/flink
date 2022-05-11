@@ -21,39 +21,48 @@ package org.apache.flink.table.gateway.service.result;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.ResultKind;
-import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.api.internal.TableResultInternal;
 import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
+import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
+
+import com.sun.istack.internal.Nullable;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
-/** Describe the execution results; */
+/** Describe the execution results. */
 public class ExecutionResult {
 
     public static final ExecutionResult SUCCESS_EXECUTION_RESULT =
             new ExecutionResult(
                     ExecutionResultKind.SUCCESS,
                     ResolvedSchema.of(Column.physical("result", DataTypes.STRING())),
-                    Collections.singletonList(GenericRowData.of(StringData.fromString("OK"))));
+                    Collections.singletonList(GenericRowData.of(StringData.fromString("OK"))),
+                    null,
+                    null);
 
     public static ExecutionResult from(TableResultInternal tableResultInternal) {
         ResultKind kind = tableResultInternal.getResultKind();
         if (kind == ResultKind.SUCCESS) {
             return SUCCESS_EXECUTION_RESULT;
         } else if (kind == ResultKind.SUCCESS_WITH_CONTENT) {
-            return new ExecutionResult(
-                    ExecutionResultKind.SUCCESS_WITH_CONTENT,
-                    tableResultInternal.getResolvedSchema(),
-                    Collections.emptyList());
+            throw new UnsupportedOperationException("Not implemented yet.");
         } else {
             throw new IllegalArgumentException("Unknown result kind: " + kind);
         }
+    }
+
+    public static ExecutionResult from(SqlGatewayException e) {
+        return new ExecutionResult(
+                ExecutionResultKind.ERROR,
+                ResolvedSchema.of(Column.physical("result", DataTypes.STRING())),
+                Collections.singletonList(GenericRowData.of(StringData.fromString("Error"))),
+                null,
+                e);
     }
 
     private final ExecutionResultKind resultKind;
@@ -62,15 +71,21 @@ public class ExecutionResult {
 
     private final List<RowData> results;
 
-    private final Optional<TableResultInternal> tableResult;
+    private final @Nullable TableResultInternal tableResult;
 
-    public ExecutionResult(
-            ExecutionResultKind resultKind, ResolvedSchema resultSchema, List<RowData> results) {
+    private final @Nullable SqlGatewayException exception;
+
+    private ExecutionResult(
+            ExecutionResultKind resultKind,
+            ResolvedSchema resultSchema,
+            List<RowData> results,
+            @Nullable TableResultInternal resultInternal,
+            @Nullable SqlGatewayException exception) {
         this.resultKind = resultKind;
         this.resultSchema = resultSchema;
         this.results = results;
-
-        this.tableResult = Optional.empty();
+        this.tableResult = resultInternal;
+        this.exception = exception;
     }
 
     public ExecutionResultKind getResultKind() {
@@ -81,11 +96,20 @@ public class ExecutionResult {
         return resultSchema;
     }
 
-    List<RowData> fetchResults(int token) {
+    public List<RowData> fetchResults(int token, int maxRows) {
+        if (maxRows < 1) {
+            throw new IllegalArgumentException("The max rows should be larger than 0.");
+        }
         return results;
     }
 
+    public SqlGatewayException getException() {
+        return exception;
+    }
+
     public void close() {
-        tableResult.flatMap(TableResult::getJobClient).ifPresent(JobClient::cancel);
+        if (tableResult != null) {
+            tableResult.getJobClient().ifPresent(JobClient::cancel);
+        }
     }
 }

@@ -16,33 +16,20 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.gateway.service.execution;
+package org.apache.flink.table.gateway.service.operation;
 
-import org.apache.flink.runtime.security.contexts.SecurityContext;
 import org.apache.flink.table.api.TableEnvironment;
-import org.apache.flink.table.api.internal.TableEnvironmentInternal;
-import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
+import org.apache.flink.table.gateway.service.context.SessionContext;
 import org.apache.flink.table.gateway.service.result.ExecutionResult;
-
-import java.util.concurrent.Future;
 
 /** The executor to communicate with Flink {@link TableEnvironment}. */
 public interface OperationExecutor {
 
     /** Creates a new instance of {@link OperationExecutor}. */
-    static OperationExecutor createExecutor(
-            TableEnvironmentInternal tEnv, ClassLoader classLoader, SecurityContext context) {
-        return new DelegateOperationExecutor(new OperationExecutorImpl(tEnv), classLoader, context);
+    static OperationExecutor createExecutor(SessionContext sessionContext) {
+        return new DelegateOperationExecutor(
+                new OperationExecutorImpl(sessionContext), sessionContext.getClassloader());
     }
 
-    default ExecutionResult executeStatementSync(String statement) {
-        try {
-            return executeStatement(statement).get();
-        } catch (Exception e) {
-            // ignore
-            throw new SqlGatewayException(e);
-        }
-    }
-
-    Future<ExecutionResult> executeStatement(String statement);
+    ExecutionResult executeStatement(String statement);
 }

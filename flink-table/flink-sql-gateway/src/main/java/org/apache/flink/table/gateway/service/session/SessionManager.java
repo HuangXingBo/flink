@@ -26,13 +26,13 @@ import org.apache.flink.table.gateway.common.session.SessionHandle;
 import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
 import org.apache.flink.table.gateway.service.context.DefaultContext;
 import org.apache.flink.table.gateway.service.context.SessionContext;
+import org.apache.flink.table.gateway.service.operation.OperationManager;
 import org.apache.flink.table.gateway.service.utils.Constants;
 import org.apache.flink.table.gateway.service.utils.ThreadUtils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -49,7 +49,7 @@ import static org.apache.flink.table.gateway.common.config.SqlGatewayServiceConf
 import static org.apache.flink.table.gateway.common.config.SqlGatewayServiceConfigOptions.SQL_GATEWAY_WORKER_THREADS_MIN;
 
 /** Manage the lifecycle of the {@code Session}. */
-public class SessionManager implements Closeable {
+public class SessionManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(SessionManager.class);
 
@@ -153,7 +153,7 @@ public class SessionManager implements Closeable {
                             Configuration.fromMap(environment.getSessionConfig()),
                             operationExecutorService);
 
-            session = new Session(sessionContext);
+            session = new Session(sessionContext, new OperationManager(operationExecutorService));
             // only put when the session id is not exist to avoid conflicts.
             if (sessions.putIfAbsent(sessionId, session) == null) {
                 break;
@@ -216,20 +216,5 @@ public class SessionManager implements Closeable {
     @VisibleForTesting
     int currentSessionCount() {
         return sessions.size();
-    }
-
-    @Override
-    public void close() {
-        if (operationExecutorService != null) {
-            operationExecutorService.shutdown();
-        }
-
-        if (scheduledExecutorService != null) {
-            scheduledExecutorService.shutdown();
-        }
-
-        for (Session session : sessions.values()) {
-            session.close();
-        }
     }
 }

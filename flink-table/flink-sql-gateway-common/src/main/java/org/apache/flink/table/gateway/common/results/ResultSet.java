@@ -18,5 +18,45 @@
 
 package org.apache.flink.table.gateway.common.results;
 
+import org.apache.flink.table.catalog.ResolvedSchema;
+import org.apache.flink.table.data.RowData;
+import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
+
+import com.sun.istack.internal.Nullable;
+
+import java.util.List;
+
 /** The collection of the results. */
-public class ResultSet {}
+public class ResultSet {
+
+    private final ResultType resultType;
+
+    private final int nextToken;
+    private final ResolvedSchema resultSchema;
+    private final List<RowData> results;
+
+    @Nullable private final SqlGatewayException exception;
+
+    public ResultSet(
+            ResultType resultType,
+            int nextToken,
+            ResolvedSchema resultSchema,
+            List<RowData> results,
+            SqlGatewayException e) {
+        this.nextToken = nextToken;
+        this.resultType = resultType;
+        this.resultSchema = resultSchema;
+        this.results = results;
+        this.exception = e;
+    }
+
+    public enum ResultType {
+        PAYLOAD,
+
+        EMPTY,
+
+        EOS,
+
+        ERROR
+    }
+}

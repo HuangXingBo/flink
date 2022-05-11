@@ -21,6 +21,6 @@ package org.apache.flink.table.gateway.common.operation;
 /** Type of the {@code Operation}. */
 public enum OperationType {
     EXECUTE_STATEMENT,
-    GET_INFO,
+
     UNKNOWN;
 }

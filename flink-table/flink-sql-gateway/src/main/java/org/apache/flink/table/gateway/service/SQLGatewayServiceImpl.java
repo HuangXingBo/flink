@@ -21,21 +21,26 @@ package org.apache.flink.table.gateway.service;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.gateway.common.SQLGatewayService;
 import org.apache.flink.table.gateway.common.operation.OperationHandle;
+import org.apache.flink.table.gateway.common.operation.OperationType;
 import org.apache.flink.table.gateway.common.results.FetchOrientation;
 import org.apache.flink.table.gateway.common.results.ResultSet;
 import org.apache.flink.table.gateway.common.session.SessionEnvironment;
 import org.apache.flink.table.gateway.common.session.SessionHandle;
 import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
+import org.apache.flink.table.gateway.service.operation.Operation;
+import org.apache.flink.table.gateway.service.operation.OperationExecutor;
+import org.apache.flink.table.gateway.service.operation.OperationManager;
+import org.apache.flink.table.gateway.service.session.Session;
 import org.apache.flink.table.gateway.service.session.SessionManager;
 
 import java.util.Map;
 
 /** The implementation for the {@link SQLGatewayService}. */
-public class GatewayServiceImpl implements SQLGatewayService {
+public class SQLGatewayServiceImpl implements SQLGatewayService {
 
     private final SessionManager sessionManager;
 
-    public GatewayServiceImpl(SessionManager sessionManager) {
+    public SQLGatewayServiceImpl(SessionManager sessionManager) {
         this.sessionManager = sessionManager;
     }
 
@@ -81,7 +86,20 @@ public class GatewayServiceImpl implements SQLGatewayService {
             long executionTimeoutMs,
             Configuration executionConfig)
             throws SqlGatewayException {
-        throw new UnsupportedOperationException("Not implemented yet.");
+        if (executionTimeoutMs != -1) {
+            throw new UnsupportedOperationException(
+                    "Currently the GatewayService doesn't support timeout mechanism.");
+        }
+
+        Session session = sessionManager.getSession(sessionHandle);
+
+        OperationExecutor executor = session.createExecutor();
+        OperationManager operationManager = session.getOperationManager();
+
+        return operationManager.submitOperation(
+                new Operation(
+                        OperationType.EXECUTE_STATEMENT,
+                        () -> executor.executeStatement(statement)));
     }
 
     @Override

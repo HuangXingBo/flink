@@ -49,12 +49,9 @@ public enum OperationStatus {
     private static Set<OperationStatus> toOperationStatusSet(OperationStatus fromStatus) {
         switch (fromStatus) {
             case INITIALIZED:
-                return new HashSet<>(
-                        Arrays.asList(
-                                PENDING, RUNNING, FINISHED, CANCELED, CLOSED, TIMEOUT, ERROR));
+                return new HashSet<>(Arrays.asList(PENDING, CANCELED, CLOSED, TIMEOUT, ERROR));
             case PENDING:
-                return new HashSet<>(
-                        Arrays.asList(RUNNING, FINISHED, CANCELED, CLOSED, TIMEOUT, ERROR));
+                return new HashSet<>(Arrays.asList(RUNNING, CANCELED, CLOSED, TIMEOUT, ERROR));
             case RUNNING:
                 return new HashSet<>(Arrays.asList(FINISHED, CANCELED, CLOSED, TIMEOUT, ERROR));
             case FINISHED:

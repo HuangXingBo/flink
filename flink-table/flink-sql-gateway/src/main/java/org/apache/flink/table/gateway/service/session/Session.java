@@ -20,6 +20,8 @@ package org.apache.flink.table.gateway.service.session;
 
 import org.apache.flink.table.gateway.common.session.SessionHandle;
 import org.apache.flink.table.gateway.service.context.SessionContext;
+import org.apache.flink.table.gateway.service.operation.OperationExecutor;
+import org.apache.flink.table.gateway.service.operation.OperationManager;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,8 +37,11 @@ public class Session implements Closeable {
     private final SessionContext sessionContext;
     private long lastAccessTime;
 
-    public Session(SessionContext sessionContext) {
+    private final OperationManager operationManager;
+
+    public Session(SessionContext sessionContext, OperationManager operationManager) {
         this.sessionContext = sessionContext;
+        this.operationManager = operationManager;
     }
 
     public void touch() {
@@ -58,5 +63,14 @@ public class Session implements Closeable {
     @Override
     public void close() {
         sessionContext.close();
+        operationManager.close();
+    }
+
+    public OperationManager getOperationManager() {
+        return operationManager;
+    }
+
+    public OperationExecutor createExecutor() {
+        return OperationExecutor.createExecutor(sessionContext);
     }
 }

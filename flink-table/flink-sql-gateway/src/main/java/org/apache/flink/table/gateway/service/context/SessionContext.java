@@ -38,6 +38,7 @@ import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.factories.PlannerFactoryUtil;
 import org.apache.flink.table.gateway.common.endpoint.EndpointVersion;
 import org.apache.flink.table.gateway.common.session.SessionHandle;
+import org.apache.flink.table.gateway.service.operation.OperationExecutor;
 import org.apache.flink.table.module.ModuleManager;
 import org.apache.flink.util.TemporaryClassLoaderContext;
 
@@ -106,8 +107,16 @@ public class SessionContext {
         return sessionConf;
     }
 
-    public synchronized Map<String, String> getConfigMap() {
+    public Map<String, String> getConfigMap() {
         return sessionConf.toMap();
+    }
+
+    public ClassLoader getClassloader() {
+        return userClassloader;
+    }
+
+    public OperationExecutor createOperationExecutor() {
+        return OperationExecutor.createExecutor(this);
     }
 
     // --------------------------------------------------------------------------------------------
@@ -227,10 +236,6 @@ public class SessionContext {
                 sessionState.moduleManager,
                 sessionState.functionCatalog,
                 userClassloader);
-    }
-
-    public ExecutorService getOperationExecutorService() {
-        return operationExecutorService;
     }
 
     private TableEnvironmentInternal createStreamTableEnvironment(

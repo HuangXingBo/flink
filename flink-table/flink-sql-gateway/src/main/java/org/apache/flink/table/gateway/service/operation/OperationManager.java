@@ -19,16 +19,19 @@
 package org.apache.flink.table.gateway.service.operation;
 
 import org.apache.flink.table.gateway.common.operation.OperationHandle;
-import org.apache.flink.table.gateway.service.execution.OperationExecutor;
+import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
 
-import java.io.Closeable;
-import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
 /** Manage the lifecycle of the {@code Operation}. */
-public class OperationManager implements Closeable {
+public class OperationManager {
+
+    private static final Logger LOG = LoggerFactory.getLogger(OperationManager.class);
 
     private final Map<OperationHandle, Operation> submittedOperations;
     private final ExecutorService service;
@@ -41,19 +44,33 @@ public class OperationManager implements Closeable {
     public OperationHandle submitOperation(Operation operation) {
         OperationHandle handle = OperationHandle.create();
         submittedOperations.put(handle, operation);
-        operation.run();
+        operation.run(service);
         return handle;
     }
 
-    public OperationHandle executeStatement(OperationExecutor executor, String statement) {
-        ExecuteStatementOperation op = new ExecuteStatementOperation(service, executor, statement);
-        return submitOperation(op);
+    public void cancelOperation(OperationHandle operationHandle) {
+        checkOperationExists(operationHandle);
+        submittedOperations.get(operationHandle).cancel();
     }
 
-    @Override
-    public void close() throws IOException {
+    public void closeOperation(OperationHandle operationHandle) {
+        checkOperationExists(operationHandle);
+        submittedOperations.remove(operationHandle).close();
+    }
+
+    public void close() {
+        LOG.info("Close the Operation Manager.");
         for (Operation registeredOp : submittedOperations.values()) {
             registeredOp.close();
+        }
+    }
+
+    private void checkOperationExists(OperationHandle operationHandle) {
+        if (!submittedOperations.containsKey(operationHandle)) {
+            throw new SqlGatewayException(
+                    String.format(
+                            "Can not find the operation in the OperationManager with the OperationHandle: %s.",
+                            operationHandle));
         }
     }
 }

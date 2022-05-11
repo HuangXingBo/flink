@@ -16,13 +16,15 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.gateway.service.execution;
+package org.apache.flink.table.gateway.service.operation;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.table.api.internal.TableEnvironmentInternal;
+import org.apache.flink.table.gateway.service.context.SessionContext;
 import org.apache.flink.table.gateway.service.result.ExecutionResult;
+import org.apache.flink.table.operations.BeginStatementSetOperation;
+import org.apache.flink.table.operations.EndStatementSetOperation;
 import org.apache.flink.table.operations.Operation;
-import org.apache.flink.table.operations.QueryOperation;
 import org.apache.flink.table.operations.command.AddJarOperation;
 import org.apache.flink.table.operations.command.RemoveJarOperation;
 import org.apache.flink.table.operations.command.ResetOperation;
@@ -32,36 +34,38 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
 
 /** An implementation of {@link OperationExecutor}. */
 public final class OperationExecutorImpl implements OperationExecutor {
+
     private static final Logger LOG = LoggerFactory.getLogger(OperationExecutorImpl.class);
 
-    private final TableEnvironmentInternal tableEnv;
+    private final SessionContext sessionContext;
 
     @VisibleForTesting
-    public OperationExecutorImpl(TableEnvironmentInternal tableEnv) {
-        this.tableEnv = tableEnv;
+    public OperationExecutorImpl(SessionContext context) {
+        this.sessionContext = context;
     }
 
     @Override
-    public Future<ExecutionResult> executeStatement(String statement) {
+    public ExecutionResult executeStatement(String statement) {
+        TableEnvironmentInternal tableEnv = sessionContext.createTableEnvironment();
+
         List<Operation> parsedOperations = tableEnv.getParser().parse(statement);
         if (parsedOperations.size() > 1) {
             throw new UnsupportedOperationException();
         }
         Operation op = parsedOperations.get(0);
-        if (op instanceof QueryOperation) {
-            throw new UnsupportedOperationException();
-        } else if (op instanceof SetOperation || op instanceof ResetOperation) {
+        if (op instanceof SetOperation || op instanceof ResetOperation) {
             throw new UnsupportedOperationException();
         } else if (op instanceof AddJarOperation || op instanceof RemoveJarOperation) {
             throw new UnsupportedOperationException();
+        } else if (op instanceof BeginStatementSetOperation) {
+            throw new UnsupportedOperationException();
+        } else if (op instanceof EndStatementSetOperation) {
+            throw new UnsupportedOperationException();
         } else {
-            return CompletableFuture.completedFuture(
-                    ExecutionResult.from(tableEnv.executeInternal(op)));
+            return ExecutionResult.from(tableEnv.executeInternal(op));
         }
     }
 }
