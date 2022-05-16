@@ -22,6 +22,7 @@ import org.apache.flink.core.testutils.CommonTestUtils;
 import org.apache.flink.table.gateway.common.operation.OperationHandle;
 import org.apache.flink.table.gateway.common.operation.OperationStatus;
 import org.apache.flink.table.gateway.common.operation.OperationType;
+import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
 import org.apache.flink.table.gateway.service.utils.ThreadUtils;
 
 import org.junit.AfterClass;
@@ -32,8 +33,10 @@ import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 
-import static org.apache.flink.table.gateway.service.result.ExecutionResult.SUCCESS_EXECUTION_RESULT;
+import static org.apache.flink.core.testutils.FlinkAssertions.anyCauseMatches;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 /** Test for {@link OperationManager}. */
 public class OperationManagerTest {
@@ -59,6 +62,9 @@ public class OperationManagerTest {
     }
 
     @Test
+    public void testOperationLifeCycle() {}
+
+    @Test
     public void testCancelWhenOperationIsRunning() throws Exception {
         CountDownLatch isRunningLatch = new CountDownLatch(1);
         CountDownLatch operationIsInterrupted = new CountDownLatch(1);
@@ -66,40 +72,58 @@ public class OperationManagerTest {
         Operation op =
                 new Operation(
                         OperationType.UNKNOWN,
-                        () -> {
+                        handle -> {
                             isRunningLatch.countDown();
                             try {
                                 Thread.sleep(10_000);
                             } catch (InterruptedException e) {
                                 operationIsInterrupted.countDown();
-                                throw e;
+                                throw new RuntimeException(e);
                             }
-                            // Should not reach here.
-                            return SUCCESS_EXECUTION_RESULT;
+                            fail("Should fail.");
+                            return null;
                         });
         OperationHandle handle = operationManager.submitOperation(op);
         isRunningLatch.countDown();
+        // Make sure the Operation is sleeping
+        Thread.sleep(1);
         operationManager.cancelOperation(handle);
 
         CommonTestUtils.waitUtil(
                 () -> operationIsInterrupted.getCount() == 0,
-                Duration.ofSeconds(5),
+                Duration.ofSeconds(10),
                 "The inner invocation should be interrupted.");
         assertEquals(OperationStatus.CANCELED, op.getOperationStatus());
     }
 
     @Test
-    public void testCancelWhenOperationIsFinished() throws Exception {
+    public void testCancelWhenOperationMultiTimes() {
+        CountDownLatch isRunningLatch = new CountDownLatch(1);
+        CountDownLatch operationIsInterrupted = new CountDownLatch(1);
+
         Operation op =
                 new Operation(
                         OperationType.UNKNOWN,
-                        () -> {
-                            return SUCCESS_EXECUTION_RESULT;
+                        handle -> {
+                            isRunningLatch.countDown();
+                            try {
+                                Thread.sleep(10_000);
+                            } catch (InterruptedException e) {
+                                operationIsInterrupted.countDown();
+                                throw new RuntimeException(e);
+                            }
+                            // Should not reach here.
+                            fail("Should fail");
+                            return null;
                         });
+        OperationHandle handle = operationManager.submitOperation(op);
+        isRunningLatch.countDown();
+        operationManager.cancelOperation(handle);
 
-        op.cancel();
-        operationManager.submitOperation(op);
-
-        assertEquals(OperationStatus.CANCELED, op.getOperationStatus());
+        assertThatThrownBy(() -> operationManager.cancelOperation(handle))
+                .satisfies(
+                        anyCauseMatches(
+                                SqlGatewayException.class,
+                                "Failed to convert the Operation Status from CANCELED to CANCELED."));
     }
 }

@@ -25,25 +25,35 @@ import java.util.Set;
 
 /** Status to describe the {@code Operation}. */
 public enum OperationStatus {
-    INITIALIZED,
+    INITIALIZED(false),
 
-    PENDING,
+    PENDING(false),
 
-    RUNNING,
+    RUNNING(false),
 
-    FINISHED,
+    FINISHED(true),
 
-    CANCELED,
+    CANCELED(true),
 
-    CLOSED,
+    CLOSED(true),
 
-    ERROR,
+    ERROR(true),
 
-    TIMEOUT;
+    TIMEOUT(true);
+
+    private final boolean isTerminalStatus;
+
+    OperationStatus(boolean isTerminalStatus) {
+        this.isTerminalStatus = isTerminalStatus;
+    }
 
     public static boolean isValidStatusTranslation(
             OperationStatus fromStatus, OperationStatus toStatus) {
         return toOperationStatusSet(fromStatus).contains(toStatus);
+    }
+
+    public boolean isTerminalStatus() {
+        return isTerminalStatus;
     }
 
     private static Set<OperationStatus> toOperationStatusSet(OperationStatus fromStatus) {

@@ -22,7 +22,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.gateway.common.SQLGatewayService;
 import org.apache.flink.table.gateway.common.operation.OperationHandle;
 import org.apache.flink.table.gateway.common.operation.OperationType;
-import org.apache.flink.table.gateway.common.results.FetchOrientation;
+import org.apache.flink.table.gateway.common.results.OperationInfo;
 import org.apache.flink.table.gateway.common.results.ResultSet;
 import org.apache.flink.table.gateway.common.session.SessionEnvironment;
 import org.apache.flink.table.gateway.common.session.SessionHandle;
@@ -63,20 +63,19 @@ public class SQLGatewayServiceImpl implements SQLGatewayService {
     @Override
     public void cancelOperation(SessionHandle sessionHandle, OperationHandle operationHandle)
             throws SqlGatewayException {
-        throw new UnsupportedOperationException("Not implemented yet.");
+        sessionManager
+                .getSession(sessionHandle)
+                .getOperationManager()
+                .cancelOperation(operationHandle);
     }
 
     @Override
     public void closeOperation(SessionHandle sessionHandle, OperationHandle operationHandle)
             throws SqlGatewayException {
-        throw new UnsupportedOperationException("Not implemented yet.");
-    }
-
-    @Override
-    public void configureSession(
-            SessionHandle sessionHandle, String statement, long executionTimeoutMs)
-            throws SqlGatewayException {
-        throw new UnsupportedOperationException("Not implemented yet.");
+        sessionManager
+                .getSession(sessionHandle)
+                .getOperationManager()
+                .closeOperation(operationHandle);
     }
 
     @Override
@@ -99,32 +98,24 @@ public class SQLGatewayServiceImpl implements SQLGatewayService {
         return operationManager.submitOperation(
                 new Operation(
                         OperationType.EXECUTE_STATEMENT,
-                        () -> executor.executeStatement(statement)));
+                        handle -> executor.executeStatement(handle, statement)));
     }
 
     @Override
     public ResultSet fetchResults(
-            SessionHandle sessionHandle, OperationHandle operationHandle, int token, int maxRows) {
-        throw new UnsupportedOperationException("Not implemented yet.");
+            SessionHandle sessionHandle, OperationHandle operationHandle, long token, int maxRows) {
+        return sessionManager
+                .getSession(sessionHandle)
+                .getOperationManager()
+                .fetchResults(operationHandle, token, maxRows);
     }
 
     @Override
-    public ResultSet fetchLog(
-            SessionHandle sessionHandle,
-            OperationHandle operationHandle,
-            FetchOrientation orientation,
-            int maxRows)
-            throws SqlGatewayException {
-        throw new UnsupportedOperationException("Not implemented yet.");
-    }
-
-    @Override
-    public ResultSet fetchResult(
-            SessionHandle sessionHandle,
-            OperationHandle operationHandle,
-            FetchOrientation orientation,
-            int maxRows)
-            throws SqlGatewayException {
-        throw new UnsupportedOperationException("Not implemented yet.");
+    public OperationInfo getOperationInfo(
+            SessionHandle sessionHandle, OperationHandle operationHandle) {
+        return sessionManager
+                .getSession(sessionHandle)
+                .getOperationManager()
+                .getOperationInfo(operationHandle);
     }
 }

@@ -16,21 +16,18 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.gateway.service.operation;
+package org.apache.flink.table.gateway.service.utils;
 
-import org.apache.flink.table.api.TableEnvironment;
-import org.apache.flink.table.gateway.common.operation.OperationHandle;
-import org.apache.flink.table.gateway.service.context.SessionContext;
-import org.apache.flink.table.gateway.service.result.ExecutionResult;
+/** Exception thrown during the execution of SQL statements. */
+public class SqlExecutionException extends RuntimeException {
 
-/** The executor to communicate with Flink {@link TableEnvironment}. */
-public interface OperationExecutor {
+    private static final long serialVersionUID = 1L;
 
-    /** Creates a new instance of {@link OperationExecutor}. */
-    static OperationExecutor createExecutor(SessionContext sessionContext) {
-        return new DelegateOperationExecutor(
-                new OperationExecutorImpl(sessionContext), sessionContext.getClassloader());
+    public SqlExecutionException(String message) {
+        super(message);
     }
 
-    ExecutionResult executeStatement(OperationHandle handle, String statement);
+    public SqlExecutionException(String message, Throwable e) {
+        super(message, e);
+    }
 }

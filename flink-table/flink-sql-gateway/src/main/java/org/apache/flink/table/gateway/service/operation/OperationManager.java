@@ -19,13 +19,15 @@
 package org.apache.flink.table.gateway.service.operation;
 
 import org.apache.flink.table.gateway.common.operation.OperationHandle;
+import org.apache.flink.table.gateway.common.results.OperationInfo;
+import org.apache.flink.table.gateway.common.results.ResultSet;
 import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 
 /** Manage the lifecycle of the {@code Operation}. */
@@ -38,24 +40,33 @@ public class OperationManager {
 
     public OperationManager(ExecutorService service) {
         this.service = service;
-        submittedOperations = new HashMap<>();
+        submittedOperations = new ConcurrentHashMap<>();
     }
 
     public OperationHandle submitOperation(Operation operation) {
         OperationHandle handle = OperationHandle.create();
         submittedOperations.put(handle, operation);
-        operation.run(service);
+        operation.run(handle, service);
         return handle;
     }
 
     public void cancelOperation(OperationHandle operationHandle) {
-        checkOperationExists(operationHandle);
-        submittedOperations.get(operationHandle).cancel();
+        getOperation(operationHandle).cancel();
     }
 
     public void closeOperation(OperationHandle operationHandle) {
-        checkOperationExists(operationHandle);
-        submittedOperations.remove(operationHandle).close();
+        Operation opToRemove = submittedOperations.remove(operationHandle);
+        if (opToRemove != null) {
+            opToRemove.close();
+        }
+    }
+
+    public ResultSet fetchResults(OperationHandle operationHandle, long token, int maxRows) {
+        return getOperation(operationHandle).fetchResults(token, maxRows);
+    }
+
+    public OperationInfo getOperationInfo(OperationHandle operationHandle) {
+        return getOperation(operationHandle).getOperationInfo();
     }
 
     public void close() {
@@ -65,12 +76,13 @@ public class OperationManager {
         }
     }
 
-    private void checkOperationExists(OperationHandle operationHandle) {
+    private synchronized Operation getOperation(OperationHandle operationHandle) {
         if (!submittedOperations.containsKey(operationHandle)) {
             throw new SqlGatewayException(
                     String.format(
                             "Can not find the operation in the OperationManager with the OperationHandle: %s.",
                             operationHandle));
         }
+        return submittedOperations.get(operationHandle);
     }
 }

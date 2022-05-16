@@ -18,14 +18,13 @@
 
 package org.apache.flink.table.gateway.service.operation;
 
+import org.apache.flink.table.gateway.common.operation.OperationHandle;
 import org.apache.flink.table.gateway.common.operation.OperationStatus;
 import org.apache.flink.table.gateway.common.operation.OperationType;
+import org.apache.flink.table.gateway.common.results.OperationInfo;
 import org.apache.flink.table.gateway.common.results.ResultSet;
 import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
 import org.apache.flink.table.gateway.service.result.ExecutionResult;
-import org.apache.flink.util.Preconditions;
-import org.apache.flink.util.function.RunnableWithException;
-import org.apache.flink.util.function.SupplierWithException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /** The identity manges the execution, resources and execution results. */
@@ -45,59 +45,47 @@ public class Operation {
     private final OperationType operationType;
     private OperationStatus status;
 
-    private final SupplierWithException<ExecutionResult, InterruptedException> resultSupplier;
+    private final Function<OperationHandle, ExecutionResult> resultSupplier;
 
     private Future<?> invocation;
     private ExecutionResult operationResult;
+    private Exception operationError;
 
     public Operation(
             OperationType operationType,
-            SupplierWithException<ExecutionResult, InterruptedException> resultSupplier) {
+            Function<OperationHandle, ExecutionResult> resultSupplier) {
+        // TODO: add compile statement
         this.status = OperationStatus.INITIALIZED;
         this.operationType = operationType;
 
         this.resultSupplier = resultSupplier;
     }
 
-    private void runBefore() {
+    void runBefore() {
         updateState(OperationStatus.PENDING);
     }
 
-    private void runAfter() {
+    void runAfter() {
         updateState(OperationStatus.FINISHED);
     }
 
-    public void run(ExecutorService service) {
+    public void run(OperationHandle handle, ExecutorService service) {
         invocation =
                 service.submit(
                         () -> {
                             try {
                                 runBefore();
                                 updateState(OperationStatus.RUNNING);
-                                ExecutionResult result = resultSupplier.get();
+                                ExecutionResult result = resultSupplier.apply(handle);
                                 writeLock(() -> operationResult = result);
                                 runAfter();
-                            } catch (SqlGatewayException e) {
+                            } catch (Exception e) {
+                                LOG.error("Failed to execute the operation.", e);
                                 writeLock(
                                         () -> {
                                             updateState(OperationStatus.ERROR);
-                                            operationResult =
-                                                    ExecutionResult.from(
-                                                            new SqlGatewayException(
-                                                                    "Failed to execute the operation.",
-                                                                    e));
+                                            operationError = e;
                                         });
-                                LOG.error("Failed to execute the operation.", e);
-                            } catch (InterruptedException e) {
-                                writeLock(
-                                        () -> {
-                                            operationResult =
-                                                    ExecutionResult.from(
-                                                            new SqlGatewayException(
-                                                                    "The operation execution is interrupted.",
-                                                                    e));
-                                        });
-                                LOG.error("The operation execution is interrupted.", e);
                             }
                         });
     }
@@ -105,8 +93,6 @@ public class Operation {
     public void cancel() {
         writeLock(
                 () -> {
-                    updateState(OperationStatus.CANCELED);
-
                     if (invocation != null && !invocation.isDone()) {
                         invocation.cancel(true);
                     }
@@ -115,14 +101,14 @@ public class Operation {
                         operationResult.close();
                         operationResult = null;
                     }
+
+                    updateState(OperationStatus.CANCELED);
                 });
     }
 
     public void close() {
         writeLock(
                 () -> {
-                    updateState(OperationStatus.CLOSED);
-
                     if (invocation != null && !invocation.isDone()) {
                         invocation.cancel(true);
                     }
@@ -131,30 +117,30 @@ public class Operation {
                         operationResult.close();
                         operationResult = null;
                     }
+
+                    updateState(OperationStatus.CLOSED);
                 });
     }
 
-    public ResultSet fetchResults(int token, int maxRows) {
+    public ResultSet fetchResults(long token, int maxRows) {
         OperationStatus currentStatus = getOperationStatus();
-        Preconditions.checkState(
-                currentStatus == OperationStatus.ERROR || currentStatus == OperationStatus.FINISHED,
-                String.format(
-                        "Can not fetch results from the operation whose status is %s.",
-                        currentStatus));
+
         if (currentStatus == OperationStatus.ERROR) {
-            return new ResultSet(
-                    ResultSet.ResultType.ERROR,
-                    -1,
-                    operationResult.getResolvedSchema(),
-                    operationResult.fetchResults(token, maxRows),
-                    operationResult.getException());
+            return new ResultSet(operationError);
+        } else if (currentStatus == OperationStatus.FINISHED) {
+            return operationResult.fetchResults(token, maxRows);
         } else {
-            throw new UnsupportedOperationException("Not implemented yet.");
+            throw new SqlGatewayException(
+                    String.format("Can not fetch results in status %s.", currentStatus));
         }
     }
 
     public OperationStatus getOperationStatus() {
         return readLock(() -> status);
+    }
+
+    public OperationInfo getOperationInfo() {
+        return readLock(() -> new OperationInfo(status, operationType, true));
     }
 
     private void updateState(OperationStatus toStatus) {
@@ -186,12 +172,10 @@ public class Operation {
         }
     }
 
-    private void writeLock(RunnableWithException runner) {
+    private void writeLock(Runnable runner) {
         lock.writeLock().lock();
         try {
             runner.run();
-        } catch (Exception e) {
-            throw new SqlGatewayException("Failed to execute operation.", e);
         } finally {
             lock.writeLock().unlock();
         }

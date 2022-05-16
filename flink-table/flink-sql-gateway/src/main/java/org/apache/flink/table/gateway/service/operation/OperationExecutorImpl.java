@@ -20,6 +20,7 @@ package org.apache.flink.table.gateway.service.operation;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.table.api.internal.TableEnvironmentInternal;
+import org.apache.flink.table.gateway.common.operation.OperationHandle;
 import org.apache.flink.table.gateway.service.context.SessionContext;
 import org.apache.flink.table.gateway.service.result.ExecutionResult;
 import org.apache.flink.table.operations.BeginStatementSetOperation;
@@ -30,15 +31,10 @@ import org.apache.flink.table.operations.command.RemoveJarOperation;
 import org.apache.flink.table.operations.command.ResetOperation;
 import org.apache.flink.table.operations.command.SetOperation;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.List;
 
 /** An implementation of {@link OperationExecutor}. */
 public final class OperationExecutorImpl implements OperationExecutor {
-
-    private static final Logger LOG = LoggerFactory.getLogger(OperationExecutorImpl.class);
 
     private final SessionContext sessionContext;
 
@@ -48,7 +44,7 @@ public final class OperationExecutorImpl implements OperationExecutor {
     }
 
     @Override
-    public ExecutionResult executeStatement(String statement) {
+    public ExecutionResult executeStatement(OperationHandle handle, String statement) {
         TableEnvironmentInternal tableEnv = sessionContext.createTableEnvironment();
 
         List<Operation> parsedOperations = tableEnv.getParser().parse(statement);
@@ -65,7 +61,7 @@ public final class OperationExecutorImpl implements OperationExecutor {
         } else if (op instanceof EndStatementSetOperation) {
             throw new UnsupportedOperationException();
         } else {
-            return ExecutionResult.from(tableEnv.executeInternal(op));
+            return ExecutionResult.from(handle, tableEnv.executeInternal(op));
         }
     }
 }

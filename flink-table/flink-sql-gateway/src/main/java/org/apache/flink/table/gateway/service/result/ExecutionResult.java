@@ -18,98 +18,40 @@
 
 package org.apache.flink.table.gateway.service.result;
 
-import org.apache.flink.core.execution.JobClient;
-import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.ResultKind;
 import org.apache.flink.table.api.internal.TableResultInternal;
-import org.apache.flink.table.catalog.Column;
-import org.apache.flink.table.catalog.ResolvedSchema;
-import org.apache.flink.table.data.GenericRowData;
-import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.data.StringData;
-import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
-
-import com.sun.istack.internal.Nullable;
-
-import java.util.Collections;
-import java.util.List;
+import org.apache.flink.table.gateway.common.operation.OperationHandle;
+import org.apache.flink.table.gateway.common.results.ResultSet;
 
 /** Describe the execution results. */
 public class ExecutionResult {
 
-    public static final ExecutionResult SUCCESS_EXECUTION_RESULT =
-            new ExecutionResult(
-                    ExecutionResultKind.SUCCESS,
-                    ResolvedSchema.of(Column.physical("result", DataTypes.STRING())),
-                    Collections.singletonList(GenericRowData.of(StringData.fromString("OK"))),
-                    null,
-                    null);
-
-    public static ExecutionResult from(TableResultInternal tableResultInternal) {
+    public static ExecutionResult from(
+            OperationHandle handle, TableResultInternal tableResultInternal) {
         ResultKind kind = tableResultInternal.getResultKind();
         if (kind == ResultKind.SUCCESS) {
-            return SUCCESS_EXECUTION_RESULT;
+            return new ExecutionResult(new ResultFetcher(handle, tableResultInternal, 1));
         } else if (kind == ResultKind.SUCCESS_WITH_CONTENT) {
-            throw new UnsupportedOperationException("Not implemented yet.");
+            return new ExecutionResult(new ResultFetcher(handle, tableResultInternal, 5000));
         } else {
-            throw new IllegalArgumentException("Unknown result kind: " + kind);
+            throw new IllegalArgumentException();
         }
     }
 
-    public static ExecutionResult from(SqlGatewayException e) {
-        return new ExecutionResult(
-                ExecutionResultKind.ERROR,
-                ResolvedSchema.of(Column.physical("result", DataTypes.STRING())),
-                Collections.singletonList(GenericRowData.of(StringData.fromString("Error"))),
-                null,
-                e);
+    private final ResultFetcher resultFetcher;
+
+    private ExecutionResult(ResultFetcher fetcher) {
+        this.resultFetcher = fetcher;
     }
 
-    private final ExecutionResultKind resultKind;
-
-    private final ResolvedSchema resultSchema;
-
-    private final List<RowData> results;
-
-    private final @Nullable TableResultInternal tableResult;
-
-    private final @Nullable SqlGatewayException exception;
-
-    private ExecutionResult(
-            ExecutionResultKind resultKind,
-            ResolvedSchema resultSchema,
-            List<RowData> results,
-            @Nullable TableResultInternal resultInternal,
-            @Nullable SqlGatewayException exception) {
-        this.resultKind = resultKind;
-        this.resultSchema = resultSchema;
-        this.results = results;
-        this.tableResult = resultInternal;
-        this.exception = exception;
-    }
-
-    public ExecutionResultKind getResultKind() {
-        return resultKind;
-    }
-
-    public ResolvedSchema getResolvedSchema() {
-        return resultSchema;
-    }
-
-    public List<RowData> fetchResults(int token, int maxRows) {
+    public ResultSet fetchResults(long token, int maxRows) {
         if (maxRows < 1) {
             throw new IllegalArgumentException("The max rows should be larger than 0.");
         }
-        return results;
-    }
-
-    public SqlGatewayException getException() {
-        return exception;
+        return resultFetcher.fetchResult(token, maxRows);
     }
 
     public void close() {
-        if (tableResult != null) {
-            tableResult.getJobClient().ifPresent(JobClient::cancel);
-        }
+        resultFetcher.close();
     }
 }

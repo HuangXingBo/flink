@@ -18,8 +18,9 @@
 
 package org.apache.flink.table.gateway.service.operation;
 
-import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
+import org.apache.flink.table.gateway.common.operation.OperationHandle;
 import org.apache.flink.table.gateway.service.result.ExecutionResult;
+import org.apache.flink.table.gateway.service.utils.SqlExecutionException;
 import org.apache.flink.table.planner.plan.metadata.FlinkDefaultRelMetadataProvider;
 import org.apache.flink.util.TemporaryClassLoaderContext;
 
@@ -49,8 +50,8 @@ public final class DelegateOperationExecutor implements OperationExecutor {
     }
 
     @Override
-    public ExecutionResult executeStatement(String statement) {
-        return wrapClassLoader(() -> delegator.executeStatement(statement));
+    public ExecutionResult executeStatement(OperationHandle handle, String statement) {
+        return wrapClassLoader(() -> delegator.executeStatement(handle, statement));
     }
 
     /**
@@ -64,7 +65,7 @@ public final class DelegateOperationExecutor implements OperationExecutor {
                     JaninoRelMetadataProvider.of(FlinkDefaultRelMetadataProvider.INSTANCE()));
             return supplier.get();
         } catch (Exception e) {
-            throw new SqlGatewayException("Failed to execute operation", e);
+            throw new SqlExecutionException("Failed to execute operation", e);
         }
     }
 }

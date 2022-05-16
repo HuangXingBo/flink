@@ -20,7 +20,7 @@ package org.apache.flink.table.gateway.common;
 
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.gateway.common.operation.OperationHandle;
-import org.apache.flink.table.gateway.common.results.FetchOrientation;
+import org.apache.flink.table.gateway.common.results.OperationInfo;
 import org.apache.flink.table.gateway.common.results.ResultSet;
 import org.apache.flink.table.gateway.common.session.SessionEnvironment;
 import org.apache.flink.table.gateway.common.session.SessionHandle;
@@ -59,13 +59,6 @@ public interface SQLGatewayService {
     // -------------------------------------------------------------------------------------------
 
     /**
-     * Using the statement to initialize the Session. It's only allowed to execute
-     * SET/RESET/CREATE/DROP/USE/ALTER/LOAD MODULE/UNLOAD MODULE/ADD JAR/REMOVE JAR.
-     */
-    void configureSession(SessionHandle sessionHandle, String statement, long executionTimeoutMs)
-            throws SqlGatewayException;
-
-    /**
      * Execute the statement with the specified Session. It allows to execute with Operation-level
      * configuration.
      */
@@ -78,27 +71,7 @@ public interface SQLGatewayService {
 
     /** Fetch the results with token id. */
     ResultSet fetchResults(
-            SessionHandle sessionHandle, OperationHandle operationHandle, int token, int maxRows);
+            SessionHandle sessionHandle, OperationHandle operationHandle, long token, int maxRows);
 
-    /**
-     * Fetch the Operation-level log from the GatewayService. For some endpoint, it allows to fetch
-     * the log at the operation level.
-     */
-    ResultSet fetchLog(
-            SessionHandle sessionHandle,
-            OperationHandle operationHandle,
-            FetchOrientation orientation,
-            int maxRows)
-            throws SqlGatewayException;
-
-    /**
-     * Only supports to fetch results in FORWARD/BACKWARD orientation. - Users can only BACKWARD
-     * from the current offset once. - The Gateway don't not materialize the changelog.
-     */
-    ResultSet fetchResult(
-            SessionHandle sessionHandle,
-            OperationHandle operationHandle,
-            FetchOrientation orientation,
-            int maxRows)
-            throws SqlGatewayException;
+    OperationInfo getOperationInfo(SessionHandle sessionHandle, OperationHandle operationHandle);
 }
