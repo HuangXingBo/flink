@@ -19,13 +19,13 @@
 package org.apache.flink.table.gateway.common.config;
 
 import org.apache.flink.configuration.ConfigOption;
-import org.apache.flink.table.gateway.common.SQLGatewayService;
+import org.apache.flink.table.gateway.common.SqlGatewayService;
 
 import java.time.Duration;
 
 import static org.apache.flink.configuration.ConfigOptions.key;
 
-/** Config options for {@link SQLGatewayService}. */
+/** Config options for {@link SqlGatewayService}. */
 public class SqlGatewayServiceConfigOptions {
 
     public static final ConfigOption<Duration> SQL_GATEWAY_EXECUTION_TIMEOUT =

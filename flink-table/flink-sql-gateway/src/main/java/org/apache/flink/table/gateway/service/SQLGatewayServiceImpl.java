@@ -19,7 +19,7 @@
 package org.apache.flink.table.gateway.service;
 
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.table.gateway.common.SQLGatewayService;
+import org.apache.flink.table.gateway.common.SqlGatewayService;
 import org.apache.flink.table.gateway.common.operation.OperationHandle;
 import org.apache.flink.table.gateway.common.operation.OperationType;
 import org.apache.flink.table.gateway.common.results.OperationInfo;
@@ -35,8 +35,8 @@ import org.apache.flink.table.gateway.service.session.SessionManager;
 
 import java.util.Map;
 
-/** The implementation for the {@link SQLGatewayService}. */
-public class SQLGatewayServiceImpl implements SQLGatewayService {
+/** The implementation for the {@link SqlGatewayService}. */
+public class SQLGatewayServiceImpl implements SqlGatewayService {
 
     private final SessionManager sessionManager;
 

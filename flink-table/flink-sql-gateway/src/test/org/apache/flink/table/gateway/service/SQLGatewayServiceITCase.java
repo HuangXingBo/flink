@@ -22,7 +22,7 @@ import org.apache.flink.client.cli.DefaultCLI;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.gateway.common.SQLGatewayService;
+import org.apache.flink.table.gateway.common.SqlGatewayService;
 import org.apache.flink.table.gateway.common.operation.OperationHandle;
 import org.apache.flink.table.gateway.common.results.ResultSet;
 import org.apache.flink.table.gateway.common.session.SessionEnvironment;
@@ -51,7 +51,7 @@ import java.util.Iterator;
 public class SQLGatewayServiceITCase extends AbstractTestBase {
 
     private static SessionManager sessionManager;
-    private static SQLGatewayService service;
+    private static SqlGatewayService service;
 
     private static final int NUM_TMS = 2;
     private static final int NUM_SLOTS_PER_TM = 2;

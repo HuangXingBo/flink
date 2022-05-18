@@ -32,7 +32,7 @@ import java.util.Map;
  * The definition for SQLGatewayService. The SQLGatewayService is the core to process the request
  * from the endpoints.
  */
-public interface SQLGatewayService {
+public interface SqlGatewayService {
 
     // -------------------------------------------------------------------------------------------
     // Session Management
