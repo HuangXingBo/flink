@@ -18,11 +18,14 @@
 
 package org.apache.flink.table.gateway.common;
 
+import java.io.Serializable;
 import java.util.Objects;
 import java.util.UUID;
 
 /** Identifiers for Handle. */
-public class HandleIdentifier {
+public class HandleIdentifier implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private final UUID publicId;
     private final UUID secretId;

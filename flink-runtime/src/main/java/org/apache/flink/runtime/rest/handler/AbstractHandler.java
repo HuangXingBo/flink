@@ -29,8 +29,8 @@ import org.apache.flink.runtime.rest.messages.MessageParameters;
 import org.apache.flink.runtime.rest.messages.RequestBody;
 import org.apache.flink.runtime.rest.messages.UntypedResponseMessageHeaders;
 import org.apache.flink.runtime.rest.util.RestMapperUtils;
+import org.apache.flink.runtime.rpc.RpcGateway;
 import org.apache.flink.runtime.rpc.exceptions.EndpointNotStartedException;
-import org.apache.flink.runtime.webmonitor.RestfulGateway;
 import org.apache.flink.runtime.webmonitor.retriever.GatewayRetriever;
 import org.apache.flink.util.AutoCloseableAsync;
 import org.apache.flink.util.ExceptionUtils;
@@ -71,7 +71,7 @@ import java.util.function.Function;
  * @param <M> type of the message parameters
  */
 public abstract class AbstractHandler<
-                T extends RestfulGateway, R extends RequestBody, M extends MessageParameters>
+                T extends RpcGateway, R extends RequestBody, M extends MessageParameters>
         extends LeaderRetrievalHandler<T> implements AutoCloseableAsync {
 
     protected final Logger log = LoggerFactory.getLogger(getClass());

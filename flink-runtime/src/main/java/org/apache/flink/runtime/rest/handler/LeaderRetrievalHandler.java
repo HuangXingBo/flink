@@ -22,7 +22,7 @@ import org.apache.flink.api.common.time.Time;
 import org.apache.flink.runtime.rest.handler.router.RoutedRequest;
 import org.apache.flink.runtime.rest.handler.util.HandlerUtils;
 import org.apache.flink.runtime.rest.messages.ErrorResponseBody;
-import org.apache.flink.runtime.webmonitor.RestfulGateway;
+import org.apache.flink.runtime.rpc.RpcGateway;
 import org.apache.flink.runtime.webmonitor.retriever.GatewayRetriever;
 import org.apache.flink.util.OptionalConsumer;
 import org.apache.flink.util.Preconditions;
@@ -47,7 +47,7 @@ import java.util.Map;
  * @param <T> type of the leader to retrieve
  */
 @ChannelHandler.Sharable
-public abstract class LeaderRetrievalHandler<T extends RestfulGateway>
+public abstract class LeaderRetrievalHandler<T extends RpcGateway>
         extends SimpleChannelInboundHandler<RoutedRequest> {
 
     protected final Logger logger = LoggerFactory.getLogger(getClass());

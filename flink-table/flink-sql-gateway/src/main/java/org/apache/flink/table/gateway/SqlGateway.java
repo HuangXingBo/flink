@@ -18,8 +18,132 @@
 
 package org.apache.flink.table.gateway;
 
+import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.table.gateway.common.endpoint.SqlGatewayEndpoint;
+import org.apache.flink.table.gateway.common.endpoint.SqlGatewayEndpointFactoryUtil;
+import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
+import org.apache.flink.table.gateway.service.SQLGatewayServiceImpl;
+import org.apache.flink.table.gateway.service.context.DefaultContext;
+import org.apache.flink.table.gateway.service.session.SessionManager;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+
+import static org.apache.flink.table.gateway.common.endpoint.SqlGatewayEndpointFactoryUtil.SQL_GATEWAY_ENDPOINT_TYPE;
+
 /** The Flink SQL Gateway. */
 public class SqlGateway {
 
-    public static void main(String[] args) {}
+    private static final Logger LOG = LoggerFactory.getLogger(SqlGateway.class);
+
+    private final CountDownLatch latch;
+
+    private SessionManager sessionManager;
+    private final List<SqlGatewayEndpoint> endpoints;
+
+    public SqlGateway() {
+        endpoints = new ArrayList<>();
+        latch = new CountDownLatch(1);
+    }
+
+    public void start() throws Exception {
+        DefaultContext context = DefaultContext.load(Collections.emptyMap());
+        sessionManager = new SessionManager(context);
+
+        sessionManager.start();
+        SQLGatewayServiceImpl sqlGatewayService = new SQLGatewayServiceImpl(sessionManager);
+
+        Configuration conf = context.getFlinkConfig();
+        List<String> identifiers = conf.get(SQL_GATEWAY_ENDPOINT_TYPE);
+        try {
+            for (String identifier : identifiers) {
+                SqlGatewayEndpoint endpoint =
+                        SqlGatewayEndpointFactoryUtil.createSqlGatewayEndpoint(
+                                identifier, sqlGatewayService, conf);
+                endpoint.start();
+                endpoints.add(endpoint);
+            }
+        } catch (Exception e) {
+            LOG.error("Failed to start the SqlGateway.", e);
+            stop();
+        }
+    }
+
+    @VisibleForTesting
+    public void stop() {
+        latch.countDown();
+        for (SqlGatewayEndpoint endpoint : endpoints) {
+            stopEndpointSilently(endpoint);
+        }
+        if (sessionManager != null) {
+            sessionManager.stop();
+        }
+    }
+
+    public static void main(String[] args) {
+        SqlGateway gateway = new SqlGateway();
+        try {
+            // add shutdown hook
+            Runtime.getRuntime().addShutdownHook(new ShutdownThread(gateway));
+            // do the actual work
+            gateway.start();
+            // wait
+            gateway.waitUntilStop();
+        } catch (Throwable t) {
+            // make space in terminal
+            System.out.println();
+            System.out.println();
+            LOG.error(
+                    "Gateway must stop. Unexpected exception. This is a bug. Please consider filing an issue.",
+                    t);
+            throw new SqlGatewayException(
+                    "Unexpected exception. This is a bug. Please consider filing an issue.", t);
+        }
+    }
+
+    private void waitUntilStop() throws Exception {
+        latch.await();
+    }
+
+    private void stopEndpointSilently(SqlGatewayEndpoint endpoint) {
+        try {
+            endpoint.stop();
+        } catch (Exception e) {
+            LOG.error("Failed to stop the endpoint. Ignore the error.", e);
+        }
+    }
+
+    // --------------------------------------------------------------------------------------------
+
+    private static class ShutdownThread extends Thread {
+
+        private final SqlGateway gateway;
+
+        public ShutdownThread(SqlGateway gateway) {
+            this.gateway = gateway;
+        }
+
+        @Override
+        public void run() {
+            // Shutdown the gateway
+            System.out.println("\nShutting down the Flink SqlServer...");
+            LOG.info("Shutting down the Flink SqlServer...");
+
+            try {
+                gateway.stop();
+            } catch (Exception e) {
+                LOG.error("Failed to shut down the Flink SqlServer: " + e.getMessage(), e);
+                System.out.println("Failed to shut down the Flink SqlServer: " + e.getMessage());
+            }
+
+            LOG.info("Flink SqlServer has been shutdown.");
+            System.out.println("Flink SqlServer has been shutdown.");
+        }
+    }
 }

@@ -20,11 +20,14 @@ package org.apache.flink.table.gateway.common.session;
 
 import org.apache.flink.table.gateway.common.HandleIdentifier;
 
+import java.io.Serializable;
 import java.util.Objects;
 import java.util.UUID;
 
 /** Session Handle that used to identify the Session. */
-public class SessionHandle {
+public class SessionHandle implements Serializable {
+
+    private static final Long serialVersionUID = 1L;
 
     private final HandleIdentifier identifier;
 
