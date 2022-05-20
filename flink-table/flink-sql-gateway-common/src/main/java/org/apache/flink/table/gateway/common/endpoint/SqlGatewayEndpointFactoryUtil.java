@@ -21,6 +21,7 @@ package org.apache.flink.table.gateway.common.endpoint;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.DelegatingConfiguration;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.gateway.common.SqlGatewayService;
@@ -30,8 +31,10 @@ import java.util.List;
 /** Util to discover the {@link SqlGatewayEndpoint}. */
 public class SqlGatewayEndpointFactoryUtil {
 
+    private static final String GATEWAY_ENDPOINT_PREFIX = "sql-gateway.endpoint";
+
     public static final ConfigOption<List<String>> SQL_GATEWAY_ENDPOINT_TYPE =
-            ConfigOptions.key("sql-gateway.endpoint.type")
+            ConfigOptions.key(String.format("%s.type", GATEWAY_ENDPOINT_PREFIX))
                     .stringType()
                     .asList()
                     .noDefaultValue()
@@ -46,17 +49,20 @@ public class SqlGatewayEndpointFactoryUtil {
                         SqlGatewayEndpointFactory.class,
                         endpointIdentifier);
         return factory.createSqlGatewayEndpoint(
-                new DefaultSqlGatewayEndpointFactoryContext(service, configuration));
+                new DefaultSqlGatewayEndpointFactoryContext(
+                        endpointIdentifier, service, configuration));
     }
 
     static class DefaultSqlGatewayEndpointFactoryContext
             implements SqlGatewayEndpointFactory.Context {
 
+        private final String endpointIdentifier;
         private final SqlGatewayService service;
         private final Configuration configuration;
 
         public DefaultSqlGatewayEndpointFactoryContext(
-                SqlGatewayService service, Configuration configuration) {
+                String endpointIdentifier, SqlGatewayService service, Configuration configuration) {
+            this.endpointIdentifier = endpointIdentifier;
             this.service = service;
             this.configuration = configuration;
         }
@@ -68,7 +74,9 @@ public class SqlGatewayEndpointFactoryUtil {
 
         @Override
         public ReadableConfig getConfiguration() {
-            return configuration;
+            return new DelegatingConfiguration(
+                    configuration,
+                    String.format("%s.%s.", GATEWAY_ENDPOINT_PREFIX, endpointIdentifier));
         }
     }
 }

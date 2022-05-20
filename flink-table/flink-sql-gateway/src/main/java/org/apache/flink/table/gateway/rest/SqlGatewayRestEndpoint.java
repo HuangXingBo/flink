@@ -36,6 +36,7 @@ import org.apache.flink.shaded.netty4.io.netty.channel.ChannelInboundHandler;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /** Rest endpoint for the {@link SqlGatewayEndpoint}. */
@@ -79,5 +80,22 @@ public class SqlGatewayRestEndpoint extends RestServerEndpoint implements SqlGat
     @Override
     public void stop() throws Exception {
         close();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof SqlGatewayRestEndpoint)) {
+            return false;
+        }
+        SqlGatewayRestEndpoint that = (SqlGatewayRestEndpoint) o;
+        return Objects.equals(service, that.service);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(service);
     }
 }

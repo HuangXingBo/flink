@@ -16,26 +16,23 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.gateway.common.endpoint;
+package org.apache.flink.table.gateway.rest;
 
-import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.table.factories.Factory;
-import org.apache.flink.table.gateway.common.SqlGatewayService;
+import org.apache.flink.configuration.ConfigOption;
+import org.apache.flink.configuration.ConfigOptions;
 
-/**
- * A factory for creating Endpoint from Configuration. This factory is used with Java's Service
- * Provider Interfaces (SPI) for discovery.
- */
-public interface SqlGatewayEndpointFactory extends Factory {
+/** Config options for {@link SqlGatewayRestEndpoint}. */
+public class SqlGatewayRestEndpointOptions {
 
-    SqlGatewayEndpoint createSqlGatewayEndpoint(Context context);
+    public static final ConfigOption<String> ADDRESS =
+            ConfigOptions.key("address")
+                    .stringType()
+                    .defaultValue("127.0.0.1")
+                    .withDescription("The address of the xxx");
 
-    /** . */
-    interface Context {
-
-        SqlGatewayService getSqlGatewayService();
-
-        /** Gives read-only access to the configuration of the Endpoint. */
-        ReadableConfig getConfiguration();
-    }
+    public static final ConfigOption<Integer> PORT =
+            ConfigOptions.key("port")
+                    .intType()
+                    .defaultValue(8083)
+                    .withDescription("The port of the xxx");
 }

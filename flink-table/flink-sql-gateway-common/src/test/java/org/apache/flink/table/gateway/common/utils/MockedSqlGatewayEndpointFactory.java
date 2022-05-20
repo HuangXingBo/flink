@@ -16,57 +16,48 @@
  * limitations under the License.
  */
 
-package org.apache.flink.table.gateway.rest;
+package org.apache.flink.table.gateway.common.utils;
 
 import org.apache.flink.configuration.ConfigOption;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.configuration.RestOptions;
+import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.table.gateway.common.endpoint.SqlGatewayEndpoint;
 import org.apache.flink.table.gateway.common.endpoint.SqlGatewayEndpointFactory;
-import org.apache.flink.table.gateway.common.utils.SqlGatewayException;
 
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Factory to create the {@link SqlGatewayRestEndpoint}. */
-public class SqlGatewayRestEndpointFactory implements SqlGatewayEndpointFactory {
+/** Factory to create the {@link SqlGatewayEndpoint}. */
+public class MockedSqlGatewayEndpointFactory implements SqlGatewayEndpointFactory {
 
-    private static final String IDENTIFIER = "rest";
+    public static final ConfigOption<String> HOST =
+            ConfigOptions.key("host").stringType().noDefaultValue();
+    public static final ConfigOption<Integer> PORT =
+            ConfigOptions.key("port").intType().noDefaultValue();
+    public static final ConfigOption<String> DESCRIPTION =
+            ConfigOptions.key("description").stringType().defaultValue("Hello World.");
 
     @Override
     public SqlGatewayEndpoint createSqlGatewayEndpoint(Context context) {
-        // TODO: fix this.
-        Configuration configuration = new Configuration();
-
-        configuration.set(
-                RestOptions.ADDRESS,
-                context.getConfiguration().get(SqlGatewayRestEndpointOptions.ADDRESS));
-        configuration.set(
-                RestOptions.PORT,
-                context.getConfiguration().get(SqlGatewayRestEndpointOptions.PORT));
-        try {
-            return new SqlGatewayRestEndpoint(context.getSqlGatewayService(), configuration);
-        } catch (Exception e) {
-            throw new SqlGatewayException("Failed to create the rest endpoint.");
-        }
+        return null;
     }
 
     @Override
     public String factoryIdentifier() {
-        return IDENTIFIER;
+        return "mocked";
     }
 
     @Override
     public Set<ConfigOption<?>> requiredOptions() {
-        return Collections.emptySet();
+        Set<ConfigOption<?>> options = new HashSet<>();
+        options.add(HOST);
+        options.add(PORT);
+        return options;
     }
 
     @Override
     public Set<ConfigOption<?>> optionalOptions() {
         Set<ConfigOption<?>> options = new HashSet<>();
-        options.add(SqlGatewayRestEndpointOptions.ADDRESS);
-        options.add(SqlGatewayRestEndpointOptions.PORT);
+        options.add(DESCRIPTION);
         return options;
     }
 }
