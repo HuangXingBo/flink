@@ -111,8 +111,8 @@ function log_environment_info {
     echo "Disk information"
     df -h
 
-    echo "##[group]Top 15 biggest directories in terms of used disk space"
-    du -a . | sort -n -r | head -n 15
+    echo "##[group]Top 30 biggest directories in terms of used disk space"
+    du -a . | sort -n -r | head -n 30
 
     if sudo -n true 2>/dev/null; then
       echo "Allocated ports"
