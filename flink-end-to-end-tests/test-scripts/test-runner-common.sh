@@ -112,7 +112,7 @@ function log_environment_info {
     df -h
 
     echo "##[group]Top 30 biggest directories in terms of used disk space"
-    du -a . | sort -n -r | head -n 30
+    du -a /tmp | sort -n -r | head -n 30
 
     if sudo -n true 2>/dev/null; then
       echo "Allocated ports"
