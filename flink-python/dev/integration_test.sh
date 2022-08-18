@@ -33,7 +33,7 @@ function test_files_in_module() {
 
     for file in ${module}/*; do
         file_name="${file##*/}"
-        if [[ ${file_name} == test_* ]]; then
+        if [[ ${file_name} == test_* ]] && [[ ${file_name} != "test_util.py" ]]; then
             pytest --durations=5 ${file}
             if [[ $? -ne 0 ]]; then
                 echo "test file ${file} failed"
@@ -54,8 +54,8 @@ test_module "common"
 # test datastream module
 test_files_in_module "datastream"
 
-# test fn_execution module
-test_module "fn_execution"
-
-# test table module
-test_files_in_module "table"
+## test fn_execution module
+#test_module "fn_execution"
+#
+## test table module
+#test_files_in_module "table"
