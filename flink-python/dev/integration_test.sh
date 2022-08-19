@@ -54,8 +54,8 @@ test_module "common"
 # test datastream module
 test_files_in_module "datastream"
 
-## test fn_execution module
-#test_module "fn_execution"
-#
-## test table module
-#test_files_in_module "table"
+# test fn_execution module
+test_module "fn_execution"
+
+# test table module
+test_files_in_module "table"
