@@ -529,8 +529,14 @@ class StreamTableAggregateTests(PyFlinkStreamTableTestCase):
               'rows-per-second' = '1'
             )
         """)
+
+        self.t_env.execute_sql("""
+        CREATE TABLE Results(
+            a BIGINT
+        ) WITH ('connector' = 'blackhole')
+        """)
         t = self.t_env.from_path('test_source')
-        t.select(call("my_count", t.a).alias("a")).to_pandas()
+        t.select(call("my_count", t.a).alias("a")).execute_insert("Results").wait()
 
     def test_tumbling_group_window_over_time(self):
         # create source file path
