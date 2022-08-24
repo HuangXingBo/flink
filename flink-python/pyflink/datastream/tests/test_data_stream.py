@@ -29,7 +29,8 @@ from pyflink.common import Row, Configuration
 from pyflink.common.time import Time
 from pyflink.common.typeinfo import Types
 from pyflink.common.watermark_strategy import WatermarkStrategy, TimestampAssigner
-from pyflink.datastream import (TimeCharacteristic, RuntimeContext, SlotSharingGroup)
+from pyflink.datastream import (TimeCharacteristic, RuntimeContext, SlotSharingGroup,
+                                StreamExecutionEnvironment, RuntimeExecutionMode)
 from pyflink.datastream.data_stream import DataStream
 from pyflink.datastream.functions import (AggregateFunction, CoMapFunction, CoFlatMapFunction,
                                           MapFunction, FilterFunction, FlatMapFunction,
@@ -43,7 +44,8 @@ from pyflink.datastream.state import (ValueStateDescriptor, ListStateDescriptor,
 from pyflink.datastream.tests.test_util import DataStreamTestSinkFunction
 from pyflink.java_gateway import get_gateway
 from pyflink.metrics import Counter, Meter, Distribution
-from pyflink.testing.test_case_utils import PyFlinkBatchTestCase, PyFlinkStreamingTestCase
+from pyflink.testing.test_case_utils import (PyFlinkBatchTestCase, PyFlinkStreamingTestCase,
+                                             PyFlinkTestCase)
 from pyflink.util.java_utils import get_j_env_configuration
 
 
@@ -925,22 +927,6 @@ class ProcessDataStreamTests(DataStreamTests):
         expected = ['+I[d, 1]', '+I[c, 1]', '+I[a, 0]', '+I[b, 0]', '+I[e, 2]']
         self.assert_equals_sorted(expected, results)
 
-    def test_print_without_align_output(self):
-        # No need to align output typeinfo since we have specified the type info of the DataStream.
-        ds = self.env.from_collection([('ab', 1), ('bdc', 2), ('cfgs', 3), ('deeefg', 4)],
-                                      type_info=Types.ROW([Types.STRING(), Types.INT()]))
-        ds.print()
-        plan = eval(str(self.env.get_execution_plan()))
-        self.assertEqual("Sink: Print to Std. Out", plan['nodes'][2]['type'])
-
-    def test_print_with_align_output(self):
-        # need to align output type before print, therefore the plan will contain three nodes
-        ds = self.env.from_collection([('ab', 1), ('bdc', 2), ('cfgs', 3), ('deeefg', 4)])
-        ds.print()
-        plan = eval(str(self.env.get_execution_plan()))
-        self.assertEqual(3, len(plan['nodes']))
-        self.assertEqual("Sink: Print to Std. Out", plan['nodes'][2]['type'])
-
     def test_collection_type_info(self):
         ds = self.env.from_collection([(1, [1.1, 1.2, 1.30], [None, 'hi', 'flink'],
                                        datetime.date(2021, 1, 9), datetime.time(12, 0, 0),
@@ -1026,6 +1012,215 @@ class ProcessDataStreamTests(DataStreamTests):
 
 class ProcessDataStreamStreamingTests(DataStreamStreamingTests, ProcessDataStreamTests,
                                       PyFlinkStreamingTestCase):
+    def test_keyed_sum(self):
+        self.env.set_parallelism(1)
+        ds = self.env.from_collection(
+            [(1, 1), (1, 2), (1, 3), (2, 5), (2, 1)],
+            type_info=Types.ROW_NAMED(["v1", "v2"], [Types.INT(), Types.INT()])
+        )
+
+        ds.key_by(lambda x: x[0]) \
+            .sum("v2") \
+            .key_by(lambda x: x[0]) \
+            .sum(1) \
+            .map(lambda x: (x[1], x[0]), output_type=Types.TUPLE([Types.INT(), Types.INT()])) \
+            .key_by(lambda x: x[1]) \
+            .sum() \
+            .add_sink(self.test_sink)
+
+        self.env.execute("key_by_sum_test_stream")
+        results = self.test_sink.get_results(False)
+        expected = ['(1,1)', '(5,1)', '(15,1)', '(5,2)', '(16,2)']
+        self.assert_equals_sorted(expected, results)
+
+    def test_keyed_min_by_and_max(self):
+        self.env.set_parallelism(1)
+        ds = self.env.from_collection([('a', 3, 0), ('a', 1, 1), ('b', 5, 0), ('b', 3, 1)],
+                                      type_info=Types.ROW_NAMED(
+                                          ["v1", "v2", "v3"],
+                                          [Types.STRING(), Types.INT(), Types.INT()])
+                                      )
+        # 1th operator min_by: ('a', 3, 0), ('a', 1, 1), ('b', 5, 0), ('b', 3, 1)
+        # 2th operator max_by: ('a', 3, 0), ('a', 3, 0), ('b', 5, 0), ('b', 5, 0)
+        # 3th operator min_by: ('a', 3, 0), ('a', 3, 0), ('a', 3, 0), ('a', 3, 0)
+        # 4th operator max_by: ('a', 'a', 'a', 'a')
+        ds.key_by(lambda x: x[0]) \
+            .min_by("v2") \
+            .map(lambda x: (x[0], x[1], x[2]),
+                 output_type=Types.TUPLE([Types.STRING(), Types.INT(), Types.INT()])) \
+            .key_by(lambda x: x[2]) \
+            .max(1) \
+            .key_by(lambda x: x[2]) \
+            .min() \
+            .map(lambda x: x[0], output_type=Types.STRING()) \
+            .key_by(lambda x: x) \
+            .max_by() \
+            .add_sink(self.test_sink)
+
+        self.env.execute("key_by_min_by_max_by_test_stream")
+        results = self.test_sink.get_results(False)
+        expected = ['a', 'a', 'a', 'a']
+        self.assert_equals_sorted(expected, results)
+
+
+class ProcessDataStreamBatchTests(DataStreamBatchTests, ProcessDataStreamTests,
+                                  PyFlinkBatchTestCase):
+
+    def test_keyed_sum(self):
+        self.env.set_parallelism(1)
+        ds = self.env.from_collection(
+            [(1, 1), (1, 2), (1, 3), (5, 1), (5, 5)],
+            type_info=Types.ROW_NAMED(["v1", "v2"], [Types.INT(), Types.INT()])
+        )
+
+        def flat_map_func1(data):
+            for i in data:
+                yield 12, i
+
+        def flat_map_func2(data):
+            for i in data:
+                yield i
+
+        # First sum operator: Test Row type data and pass in field names.
+        # Second sum operator: Test Row type data and use parameter default value: 0.
+        # Third sum operator: Test Tuple type data and pass in field index number.
+        # Fourthly sum operator: Test Number(int) type data.
+        ds.key_by(lambda x: x[0]) \
+            .sum("v2") \
+            .key_by(lambda x: x[1]) \
+            .sum() \
+            .flat_map(flat_map_func1, output_type=Types.TUPLE([Types.INT(), Types.INT()])) \
+            .key_by(lambda x: x[0]) \
+            .sum(1) \
+            .flat_map(flat_map_func2, output_type=Types.INT()) \
+            .key_by(lambda x: x) \
+            .sum() \
+            .add_sink(self.test_sink)
+
+        self.env.execute("key_by_sum_test_batch")
+        results = self.test_sink.get_results(False)
+        expected = ['24']
+        self.assertEqual(expected, results)
+
+    def test_keyed_min_by_and_max(self):
+        self.env.set_parallelism(1)
+        ds = self.env.from_collection(
+            [(1, '9', 0), (1, '5', 1), (1, '6', 2), (5, '5', 0), (5, '3', 1)],
+            type_info=Types.ROW_NAMED(["v1", "v2", "v3"],
+                                      [Types.INT(), Types.STRING(), Types.INT()])
+        )
+
+        def flat_map_func1(data):
+            for i in data:
+                yield int(i), 1
+
+        def flat_map_func2(data):
+            for i in data:
+                yield i
+
+        ds.key_by(lambda x: x[0]) \
+            .min_by("v2") \
+            .map(lambda x: (x[0], x[1], x[2]),
+                 output_type=Types.TUPLE([Types.INT(), Types.STRING(), Types.INT()])) \
+            .key_by(lambda x: x[2]) \
+            .max(0) \
+            .flat_map(flat_map_func1, output_type=Types.TUPLE([Types.INT(), Types.INT()])) \
+            .key_by(lambda x: [1]) \
+            .min_by() \
+            .flat_map(flat_map_func2, output_type=Types.INT()) \
+            .key_by(lambda x: x) \
+            .max_by() \
+            .add_sink(self.test_sink)
+
+        self.env.execute("key_by_min_by_max_by_test_batch")
+        results = self.test_sink.get_results(False)
+        expected = ['1']
+        self.assert_equals_sorted(expected, results)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 7), reason="requires python3.7")
+class EmbeddedDataStreamStreamTests(DataStreamStreamingTests, PyFlinkStreamingTestCase):
+    def setUp(self):
+        super(EmbeddedDataStreamStreamTests, self).setUp()
+        config = get_j_env_configuration(self.env._j_stream_execution_environment)
+        config.setString("python.execution-mode", "thread")
+
+    def test_metrics(self):
+        ds = self.env.from_collection(
+            [('ab', 'a', decimal.Decimal(1)),
+             ('bdc', 'a', decimal.Decimal(2)),
+             ('cfgs', 'a', decimal.Decimal(3)),
+             ('deeefg', 'a', decimal.Decimal(4))],
+            type_info=Types.TUPLE(
+                [Types.STRING(), Types.STRING(), Types.BIG_DEC()]))
+
+        class MyMapFunction(MapFunction):
+            def __init__(self):
+                self.counter = None  # type: Counter
+                self.counter_value = 0
+                self.meter = None  # type: Meter
+                self.meter_value = 0
+                self.value_to_expose = 0
+                self.distribution = None  # type: Distribution
+
+            def open(self, runtime_context: RuntimeContext):
+                self.counter = runtime_context.get_metrics_group().counter("my_counter")
+                self.meter = runtime_context.get_metrics_group().meter('my_meter', 1)
+                runtime_context.get_metrics_group().gauge("my_gauge", lambda: self.value_to_expose)
+                self.distribution = runtime_context.get_metrics_group().distribution(
+                    "my_distribution")
+
+            def map(self, value):
+                self.counter.inc()
+                self.counter_value += 1
+                assert self.counter.get_count() == self.counter_value
+
+                self.meter.mark_event(1)
+                self.meter_value += 1
+                assert self.meter.get_count() == self.meter_value
+
+                self.value_to_expose += 1
+
+                self.distribution.update(int(value[2]))
+
+                return Row(value[0], len(value[0]), value[2])
+
+        (ds.key_by(lambda value: value[1])
+         .map(MyMapFunction(),
+              output_type=Types.ROW([Types.STRING(), Types.INT(), Types.BIG_DEC()]))
+         .add_sink(self.test_sink))
+        self.env.execute('test_basic_operations')
+        results = self.test_sink.get_results()
+        expected = ['+I[ab, 2, 1]', '+I[bdc, 3, 2]', '+I[cfgs, 4, 3]', '+I[deeefg, 6, 4]']
+        self.assert_equals_sorted(expected, results)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 7), reason="requires python3.7")
+class EmbeddedDataStreamBatchTests(DataStreamBatchTests, PyFlinkBatchTestCase):
+    def setUp(self):
+        super(EmbeddedDataStreamBatchTests, self).setUp()
+        config = get_j_env_configuration(self.env._j_stream_execution_environment)
+        config.setString("python.execution-mode", "thread")
+
+
+class CommonDataStreamTests(PyFlinkTestCase):
+    def setUp(self) -> None:
+        super(CommonDataStreamTests, self).setUp()
+        self.env = StreamExecutionEnvironment.get_execution_environment()
+        self.env.set_parallelism(2)
+        self.env.set_runtime_mode(RuntimeExecutionMode.STREAMING)
+        config = get_j_env_configuration(self.env._j_stream_execution_environment)
+        config.setString("akka.ask.timeout", "20 s")
+        self.test_sink = DataStreamTestSinkFunction()
+
+    def tearDown(self) -> None:
+        self.test_sink.clear()
+
+    def assert_equals_sorted(self, expected, actual):
+        expected.sort()
+        actual.sort()
+        self.assertEqual(expected, actual)
+
     def test_data_stream_name(self):
         ds = self.env.from_collection([(1, 'Hi', 'Hello'), (2, 'Hello', 'Hi')])
         test_name = 'test_name'
@@ -1280,56 +1475,6 @@ class ProcessDataStreamStreamingTests(DataStreamStreamingTests, ProcessDataStrea
             actual = [result for result in results]
             self.assert_equals_sorted(expected, actual)
 
-    def test_keyed_sum(self):
-        self.env.set_parallelism(1)
-        ds = self.env.from_collection(
-            [(1, 1), (1, 2), (1, 3), (2, 5), (2, 1)],
-            type_info=Types.ROW_NAMED(["v1", "v2"], [Types.INT(), Types.INT()])
-        )
-
-        ds.key_by(lambda x: x[0]) \
-            .sum("v2") \
-            .key_by(lambda x: x[0]) \
-            .sum(1) \
-            .map(lambda x: (x[1], x[0]), output_type=Types.TUPLE([Types.INT(), Types.INT()])) \
-            .key_by(lambda x: x[1]) \
-            .sum() \
-            .add_sink(self.test_sink)
-
-        self.env.execute("key_by_sum_test_stream")
-        results = self.test_sink.get_results(False)
-        expected = ['(1,1)', '(5,1)', '(15,1)', '(5,2)', '(16,2)']
-        self.assert_equals_sorted(expected, results)
-
-    def test_keyed_min_by_and_max(self):
-        self.env.set_parallelism(1)
-        ds = self.env.from_collection([('a', 3, 0), ('a', 1, 1), ('b', 5, 0), ('b', 3, 1)],
-                                      type_info=Types.ROW_NAMED(
-                                          ["v1", "v2", "v3"],
-                                          [Types.STRING(), Types.INT(), Types.INT()])
-                                      )
-        # 1th operator min_by: ('a', 3, 0), ('a', 1, 1), ('b', 5, 0), ('b', 3, 1)
-        # 2th operator max_by: ('a', 3, 0), ('a', 3, 0), ('b', 5, 0), ('b', 5, 0)
-        # 3th operator min_by: ('a', 3, 0), ('a', 3, 0), ('a', 3, 0), ('a', 3, 0)
-        # 4th operator max_by: ('a', 'a', 'a', 'a')
-        ds.key_by(lambda x: x[0]) \
-            .min_by("v2") \
-            .map(lambda x: (x[0], x[1], x[2]),
-                 output_type=Types.TUPLE([Types.STRING(), Types.INT(), Types.INT()])) \
-            .key_by(lambda x: x[2]) \
-            .max(1) \
-            .key_by(lambda x: x[2]) \
-            .min() \
-            .map(lambda x: x[0], output_type=Types.STRING()) \
-            .key_by(lambda x: x) \
-            .max_by() \
-            .add_sink(self.test_sink)
-
-        self.env.execute("key_by_min_by_max_by_test_stream")
-        results = self.test_sink.get_results(False)
-        expected = ['a', 'a', 'a', 'a']
-        self.assert_equals_sorted(expected, results)
-
     def test_function_with_error(self):
         ds = self.env.from_collection([('a', 0), ('b', 0), ('c', 1), ('d', 1), ('e', 1)],
                                       type_info=Types.ROW([Types.STRING(), Types.INT()]))
@@ -1362,146 +1507,6 @@ class ProcessDataStreamStreamingTests(DataStreamStreamingTests, ProcessDataStrea
         results = self.test_sink.get_results(True)
         expected = ['c', 'c', 'b']
         self.assert_equals_sorted(expected, results)
-
-
-class ProcessDataStreamBatchTests(DataStreamBatchTests, ProcessDataStreamTests,
-                                  PyFlinkBatchTestCase):
-
-    def test_keyed_sum(self):
-        self.env.set_parallelism(1)
-        ds = self.env.from_collection(
-            [(1, 1), (1, 2), (1, 3), (5, 1), (5, 5)],
-            type_info=Types.ROW_NAMED(["v1", "v2"], [Types.INT(), Types.INT()])
-        )
-
-        def flat_map_func1(data):
-            for i in data:
-                yield 12, i
-
-        def flat_map_func2(data):
-            for i in data:
-                yield i
-
-        # First sum operator: Test Row type data and pass in field names.
-        # Second sum operator: Test Row type data and use parameter default value: 0.
-        # Third sum operator: Test Tuple type data and pass in field index number.
-        # Fourthly sum operator: Test Number(int) type data.
-        ds.key_by(lambda x: x[0]) \
-            .sum("v2") \
-            .key_by(lambda x: x[1]) \
-            .sum() \
-            .flat_map(flat_map_func1, output_type=Types.TUPLE([Types.INT(), Types.INT()])) \
-            .key_by(lambda x: x[0]) \
-            .sum(1) \
-            .flat_map(flat_map_func2, output_type=Types.INT()) \
-            .key_by(lambda x: x) \
-            .sum() \
-            .add_sink(self.test_sink)
-
-        self.env.execute("key_by_sum_test_batch")
-        results = self.test_sink.get_results(False)
-        expected = ['24']
-        self.assertEqual(expected, results)
-
-    def test_keyed_min_by_and_max(self):
-        self.env.set_parallelism(1)
-        ds = self.env.from_collection(
-            [(1, '9', 0), (1, '5', 1), (1, '6', 2), (5, '5', 0), (5, '3', 1)],
-            type_info=Types.ROW_NAMED(["v1", "v2", "v3"],
-                                      [Types.INT(), Types.STRING(), Types.INT()])
-        )
-
-        def flat_map_func1(data):
-            for i in data:
-                yield int(i), 1
-
-        def flat_map_func2(data):
-            for i in data:
-                yield i
-
-        ds.key_by(lambda x: x[0]) \
-            .min_by("v2") \
-            .map(lambda x: (x[0], x[1], x[2]),
-                 output_type=Types.TUPLE([Types.INT(), Types.STRING(), Types.INT()])) \
-            .key_by(lambda x: x[2]) \
-            .max(0) \
-            .flat_map(flat_map_func1, output_type=Types.TUPLE([Types.INT(), Types.INT()])) \
-            .key_by(lambda x: [1]) \
-            .min_by() \
-            .flat_map(flat_map_func2, output_type=Types.INT()) \
-            .key_by(lambda x: x) \
-            .max_by() \
-            .add_sink(self.test_sink)
-
-        self.env.execute("key_by_min_by_max_by_test_batch")
-        results = self.test_sink.get_results(False)
-        expected = ['1']
-        self.assert_equals_sorted(expected, results)
-
-
-@pytest.mark.skipif(sys.version_info < (3, 7), reason="requires python3.7")
-class EmbeddedDataStreamStreamTests(DataStreamStreamingTests, PyFlinkStreamingTestCase):
-    def setUp(self):
-        super(EmbeddedDataStreamStreamTests, self).setUp()
-        config = get_j_env_configuration(self.env._j_stream_execution_environment)
-        config.setString("python.execution-mode", "thread")
-
-    def test_metrics(self):
-        ds = self.env.from_collection(
-            [('ab', 'a', decimal.Decimal(1)),
-             ('bdc', 'a', decimal.Decimal(2)),
-             ('cfgs', 'a', decimal.Decimal(3)),
-             ('deeefg', 'a', decimal.Decimal(4))],
-            type_info=Types.TUPLE(
-                [Types.STRING(), Types.STRING(), Types.BIG_DEC()]))
-
-        class MyMapFunction(MapFunction):
-            def __init__(self):
-                self.counter = None  # type: Counter
-                self.counter_value = 0
-                self.meter = None  # type: Meter
-                self.meter_value = 0
-                self.value_to_expose = 0
-                self.distribution = None  # type: Distribution
-
-            def open(self, runtime_context: RuntimeContext):
-                self.counter = runtime_context.get_metrics_group().counter("my_counter")
-                self.meter = runtime_context.get_metrics_group().meter('my_meter', 1)
-                runtime_context.get_metrics_group().gauge("my_gauge", lambda: self.value_to_expose)
-                self.distribution = runtime_context.get_metrics_group().distribution(
-                    "my_distribution")
-
-            def map(self, value):
-                self.counter.inc()
-                self.counter_value += 1
-                assert self.counter.get_count() == self.counter_value
-
-                self.meter.mark_event(1)
-                self.meter_value += 1
-                assert self.meter.get_count() == self.meter_value
-
-                self.value_to_expose += 1
-
-                self.distribution.update(int(value[2]))
-
-                return Row(value[0], len(value[0]), value[2])
-
-        (ds.key_by(lambda value: value[1])
-         .map(MyMapFunction(),
-              output_type=Types.ROW([Types.STRING(), Types.INT(), Types.BIG_DEC()]))
-         .add_sink(self.test_sink))
-        self.env.execute('test_basic_operations')
-        results = self.test_sink.get_results()
-        expected = ['+I[ab, 2, 1]', '+I[bdc, 3, 2]', '+I[cfgs, 4, 3]', '+I[deeefg, 6, 4]']
-        self.assert_equals_sorted(expected, results)
-
-
-@pytest.mark.skipif(sys.version_info < (3, 7), reason="requires python3.7")
-class EmbeddedDataStreamBatchTests(DataStreamBatchTests, PyFlinkBatchTestCase):
-    def setUp(self):
-        super(EmbeddedDataStreamBatchTests, self).setUp()
-        config = get_j_env_configuration(self.env._j_stream_execution_environment)
-        config.setString("python.execution-mode", "thread")
 
 
 class MyKeySelector(KeySelector):
