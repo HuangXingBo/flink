@@ -596,6 +596,7 @@ under the License.
 								<artifactItem>
 									<groupId>junit</groupId>
 									<artifactId>junit</artifactId>
+									<version>4.13.2</version>
 								</artifactItem>
 							</artifactItems>
 							<outputDirectory>${project.build.directory}/test-dependencies</outputDirectory>
