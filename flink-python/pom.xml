@@ -245,6 +245,12 @@ under the License.
 		</dependency>
 
 		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
 			<!-- Indirectly accessed in pyflink_gateway_server -->
 			<groupId>org.apache.flink</groupId>
 			<artifactId>flink-sql-avro</artifactId>
