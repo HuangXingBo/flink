@@ -27,6 +27,21 @@ function test_module() {
     fi
 }
 
+function test_files_in_module() {
+    module="$FLINK_PYTHON_DIR/pyflink/$1/tests"
+    echo "test module $module"
+
+    for file in ${module}/*; do
+        file_name="${file##*/}"
+        if [[ ${file_name} == test_* ]] && [[ ${file_name} != "test_util.py" ]]; then
+            pytest --durations=5 ${file}
+            if [[ $? -ne 0 ]]; then
+                echo "test file ${file} failed"
+                exit 1
+            fi
+        fi
+    done
+}
 # CURRENT_DIR is "flink/flink-python/dev/"
 CURRENT_DIR="$(cd "$( dirname "$0" )" && pwd)"
 
@@ -37,10 +52,10 @@ FLINK_PYTHON_DIR=$(dirname "$CURRENT_DIR")
 test_module "common"
 
 # test datastream module
-test_module "datastream"
+test_files_in_module "datastream"
 
 # test fn_execution module
 test_module "fn_execution"
 
 # test table module
-test_module "table"
+test_files_in_module "table"
