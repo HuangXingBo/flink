@@ -130,13 +130,11 @@ class PyFlinkSharedMiniClusterTestCase(PyFlinkTestCase):
             .withHaLeadershipControl()
             .build())
         cls.resource = (
-            get_gateway().jvm.org.apache.flink.test.util.MiniClusterWithClientResource(
-                MiniClusterResourceConfiguration))
+            get_gateway().jvm.org.apache.flink.streaming.runtime.testutils.
+            MiniClusterWithClientResource(MiniClusterResourceConfiguration))
         cls.resource.before()
 
-        cls.env = StreamExecutionEnvironment(
-            get_gateway().jvm.org.apache.flink.streaming.util.TestStreamEnvironment(
-                cls.resource.getMiniCluster(), 2))
+        cls.env = StreamExecutionEnvironment(cls.resource.getTestStreamEnvironment())
         print(cls.resource.getRestAddress())
 
     @classmethod
@@ -154,6 +152,7 @@ class PyFlinkStreamTableTestCase(PyFlinkSharedMiniClusterTestCase):
     def setUpClass(cls):
         super(PyFlinkStreamTableTestCase, cls).setUpClass()
         cls.env.set_runtime_mode(RuntimeExecutionMode.STREAMING)
+        cls.env.set_parallelism(2)
         cls.t_env = StreamTableEnvironment.create(cls.env)
         cls.t_env.get_config().set("python.fn-execution.bundle.size", "1")
 
@@ -167,6 +166,7 @@ class PyFlinkBatchTableTestCase(PyFlinkSharedMiniClusterTestCase):
     def setUpClass(cls):
         super(PyFlinkBatchTableTestCase, cls).setUpClass()
         cls.env.set_runtime_mode(RuntimeExecutionMode.BATCH)
+        cls.env.set_parallelism(2)
         cls.t_env = StreamTableEnvironment.create(cls.env)
         cls.t_env.get_config().set("python.fn-execution.bundle.size", "1")
 
@@ -179,6 +179,7 @@ class PyFlinkStreamingTestCase(PyFlinkSharedMiniClusterTestCase):
     @classmethod
     def setUpClass(cls):
         super(PyFlinkStreamingTestCase, cls).setUpClass()
+        cls.env.set_parallelism(2)
         cls.env.set_runtime_mode(RuntimeExecutionMode.STREAMING)
 
 
@@ -190,6 +191,7 @@ class PyFlinkBatchTestCase(PyFlinkSharedMiniClusterTestCase):
     @classmethod
     def setUpClass(cls):
         super(PyFlinkBatchTestCase, cls).setUpClass()
+        cls.env.set_parallelism(2)
         cls.env.set_runtime_mode(RuntimeExecutionMode.BATCH)
 
 
