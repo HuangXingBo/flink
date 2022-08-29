@@ -38,6 +38,7 @@ from pyflink.fn_execution.formats.avro import FlinkAvroDecoder, FlinkAvroDatumRe
 from pyflink.fn_execution.ResettableIO import ResettableIO
 from pyflink.table.utils import pandas_to_arrow, arrow_to_pandas
 
+
 ROW_KIND_BIT_SIZE = 2
 
 cdef class InternalRow:
