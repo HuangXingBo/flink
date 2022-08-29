@@ -85,13 +85,13 @@ function pr_contains_docs_changes() {
 # Returns 1 if the PR contains cython file changes or it is not a pull request.
 #
 function pr_contains_cython_changes() {
-    github_num_commits
-    GITHUB_NUM_COMMITS=$?
-    if [[ ${GITHUB_NUM_COMMITS} == 0 ]]; then
-        return 1
-    fi
+#    github_num_commits
+#    GITHUB_NUM_COMMITS=$?
+#    if [[ ${GITHUB_NUM_COMMITS} == 0 ]]; then
+#        return 1
+#    fi
 
-    if [[ $(git diff --name-only HEAD..HEAD~"$GITHUB_NUM_COMMITS" | grep -E "pyx|pxd") != "" ]] ; then
+    if [[ $(git diff --name-only HEAD..HEAD~4 | grep -E "pyx|pxd") != "" ]] ; then
         echo "INFO: This PR contains changes to the cython files. Changed files:"
 		git diff --name-only HEAD..HEAD~"$GITHUB_NUM_COMMITS"
 		return 1
