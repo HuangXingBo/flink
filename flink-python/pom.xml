@@ -493,7 +493,7 @@ under the License.
 				<artifactId>maven-dependency-plugin</artifactId>
 				<executions>
 					<execution>
-						<phase>package</phase>
+						<phase>test</phase>
 						<goals>
 							<goal>copy</goal>
 						</goals>
@@ -580,6 +580,10 @@ under the License.
 								<artifactItem>
 									<groupId>org.apache.flink</groupId>
 									<artifactId>flink-test-utils</artifactId>
+								</artifactItem>
+								<artifactItem>
+									<groupId>junit</groupId>
+									<artifactId>junit</artifactId>
 								</artifactItem>
 							</artifactItems>
 							<outputDirectory>${project.build.directory}/test-dependencies</outputDirectory>
