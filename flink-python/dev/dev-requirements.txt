@@ -34,3 +34,6 @@ grpcio-tools>=1.29.0,<=1.46.3
 pemja==0.2.4; python_version >= '3.7' and platform_system != 'Windows'
 httplib2>=0.19.0,<=0.20.4
 protobuf<=3.21
+Sphinx==5.3.0
+pydata_sphinx_theme==0.11.0
+sphinx_mdinclude==0.5.3
