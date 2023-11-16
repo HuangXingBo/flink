@@ -593,7 +593,7 @@ function check_stage() {
 #########################
 # Tox check
 function tox_check() {
-    LATEST_PYTHON="py311"
+    LATEST_PYTHON="py39"
     print_function "STAGE" "tox checks"
     # Set created py-env in $PATH for tox's creating virtual env
     activate
