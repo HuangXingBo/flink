@@ -99,11 +99,11 @@ jobs:
       - name: "Setup Python"
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.8'
       - name: "Install cibuildwheel"
         run: python -m pip install cibuildwheel==2.16.5
-#      - name: "Install apache-beam"
-#        run: python -m pip install -r flink-python/dev/dev-requirements.txt
+      - name: "Install apache-beam"
+        run: python -m pip install -r flink-python/dev/dev-requirements.txt
       - name: "Build python wheels for ${{ matrix.os_name }}"
         run: python -m cibuildwheel --output-dir flink-python/dist flink-python
         env:
