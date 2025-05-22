@@ -21,9 +21,14 @@ package org.apache.flink.table.api;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.api.config.TableConfigOptions;
+import org.apache.flink.table.catalog.CatalogStore;
+import org.apache.flink.table.expressions.SqlFactory;
 import org.apache.flink.table.functions.UserDefinedFunction;
+
+import javax.annotation.Nullable;
+
+import java.util.Optional;
 
 import static org.apache.flink.api.common.RuntimeExecutionMode.BATCH;
 import static org.apache.flink.api.common.RuntimeExecutionMode.STREAMING;
@@ -59,9 +64,18 @@ public class EnvironmentSettings {
 
     private final ClassLoader classLoader;
 
-    private EnvironmentSettings(Configuration configuration, ClassLoader classLoader) {
+    private final @Nullable CatalogStore catalogStore;
+    private final @Nullable SqlFactory sqlFactory;
+
+    private EnvironmentSettings(
+            Configuration configuration,
+            ClassLoader classLoader,
+            CatalogStore catalogStore,
+            SqlFactory sqlFactory) {
         this.configuration = configuration;
         this.classLoader = classLoader;
+        this.catalogStore = catalogStore;
+        this.sqlFactory = sqlFactory;
     }
 
     /**
@@ -92,27 +106,6 @@ public class EnvironmentSettings {
     /** Creates a builder for creating an instance of {@link EnvironmentSettings}. */
     public static Builder newInstance() {
         return new Builder();
-    }
-
-    /**
-     * Creates an instance of {@link EnvironmentSettings} from configuration.
-     *
-     * @deprecated use {@link Builder#withConfiguration(Configuration)} instead.
-     */
-    @Deprecated
-    public static EnvironmentSettings fromConfiguration(ReadableConfig configuration) {
-        return new EnvironmentSettings(
-                (Configuration) configuration, Thread.currentThread().getContextClassLoader());
-    }
-
-    /**
-     * Convert the environment setting to the {@link Configuration}.
-     *
-     * @deprecated use {@link #getConfiguration} instead.
-     */
-    @Deprecated
-    public Configuration toConfiguration() {
-        return configuration;
     }
 
     /** Get the underlying {@link Configuration}. */
@@ -150,12 +143,26 @@ public class EnvironmentSettings {
         return classLoader;
     }
 
+    @Internal
+    @Nullable
+    public CatalogStore getCatalogStore() {
+        return catalogStore;
+    }
+
+    @Internal
+    public Optional<SqlFactory> getSqlFactory() {
+        return Optional.ofNullable(sqlFactory);
+    }
+
     /** A builder for {@link EnvironmentSettings}. */
     @PublicEvolving
     public static class Builder {
 
         private final Configuration configuration = new Configuration();
         private ClassLoader classLoader;
+
+        private @Nullable CatalogStore catalogStore;
+        private @Nullable SqlFactory sqlFactory;
 
         public Builder() {}
 
@@ -230,12 +237,26 @@ public class EnvironmentSettings {
             return this;
         }
 
+        public Builder withCatalogStore(CatalogStore catalogStore) {
+            this.catalogStore = catalogStore;
+            return this;
+        }
+
+        /**
+         * Provides a way to customize the process of serializing Table API to a SQL string. This is
+         * useful, for example, for customizing the serialization of inline functions.
+         */
+        public Builder withSqlFactory(SqlFactory sqlFactory) {
+            this.sqlFactory = sqlFactory;
+            return this;
+        }
+
         /** Returns an immutable instance of {@link EnvironmentSettings}. */
         public EnvironmentSettings build() {
             if (classLoader == null) {
                 classLoader = Thread.currentThread().getContextClassLoader();
             }
-            return new EnvironmentSettings(configuration, classLoader);
+            return new EnvironmentSettings(configuration, classLoader, catalogStore, sqlFactory);
         }
     }
 }

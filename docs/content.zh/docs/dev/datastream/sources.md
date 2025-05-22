@@ -203,19 +203,6 @@ DataStream<Integer> stream = env.fromSource(
 ...
 ```
 {{< /tab >}}
-{{< tab "Scala" >}}
-```scala
-val env = StreamExecutionEnvironment.getExecutionEnvironment()
-
-val mySource = new MySource(...)
-
-val stream = env.fromSource(
-      mySource,
-      WatermarkStrategy.noWatermarks(),
-      "MySourceName")
-...
-```
-{{< /tab >}}
 {{< tab "Python" >}}
 ```python
 env = StreamExecutionEnvironment.get_execution_environment()
@@ -294,9 +281,9 @@ public class FixedSizeSplitFetcherManager<E, SplitT extends SourceSplit>
 
     public FixedSizeSplitFetcherManager(
             int numFetchers,
-            FutureCompletingBlockingQueue<RecordsWithSplitIds<E>> elementsQueue,
-            Supplier<SplitReader<E, SplitT>> splitReaderSupplier) {
-        super(elementsQueue, splitReaderSupplier);
+            Supplier<SplitReader<E, SplitT>> splitReaderSupplier,
+            Configuration config) {
+        super(splitReaderSupplier, config);
         this.numFetchers = numFetchers;
         // 创建 numFetchers 个分片提取器.
         for (int i = 0; i < numFetchers; i++) {
@@ -338,17 +325,15 @@ public class FixedFetcherSizeSourceReader<E, T, SplitT extends SourceSplit, Spli
         extends SourceReaderBase<E, T, SplitT, SplitStateT> {
 
     public FixedFetcherSizeSourceReader(
-            FutureCompletingBlockingQueue<RecordsWithSplitIds<E>> elementsQueue,
             Supplier<SplitReader<E, SplitT>> splitFetcherSupplier,
             RecordEmitter<E, T, SplitStateT> recordEmitter,
             Configuration config,
             SourceReaderContext context) {
         super(
-                elementsQueue,
                 new FixedSizeSplitFetcherManager<>(
-                        config.getInteger(SourceConfig.NUM_FETCHERS),
-                        elementsQueue,
-                        splitFetcherSupplier),
+                        config.get(SourceConfig.NUM_FETCHERS),
+                        splitFetcherSupplier,
+                        config),
                 recordEmitter,
                 config,
                 context);
@@ -385,10 +370,6 @@ Python API 中尚不支持该特性。
 ## 事件时间和水印
 
 Source 的实现需要完成一部分*事件时间*分配和*水印生成*的工作。离开 SourceReader 的事件流需要具有事件时间戳，并且（在流执行期间）包含水印。有关事件时间和水印的介绍，请参见[及时流处理]({{< ref "docs/concepts/time" >}})。
-
-{{< hint warning >}}
-旧版 {{< gh_link file="flink-streaming-java/src/main/java/org/apache/flink/streaming/api/functions/source/SourceFunction.java" name="SourceFunction" >}} 的应用通常在之后的单独的一步中通过 `stream.assignTimestampsAndWatermarks(WatermarkStrategy)` 生成时间戳和水印。这个函数不应该与新的 Sources 一起使用，因为此时时间戳应该已经被分配了，而且该函数会覆盖掉之前的分片（split-aware）水印。
-{{< /hint >}}
 
 #### API
 
@@ -447,3 +428,9 @@ environment.from_source(
 使用 *SplitReader API* 实现源连接器时，将自动进行处理。所有基于 SplitReader API 的实现都具有开箱即用（out-of-the-box）的分片水印。
 
 为了保证更底层的 `SourceReader` API 可以使用每个分片的水印生成，必须将不同分片的事件输送到不同的输出（outputs）中：*局部分片（Split-local） SourceOutputs*。通过 `createOutputForSplit(splitId)` 和 `releaseOutputForSplit(splitId)` 方法，可以在总 {{< gh_link file="flink-core/src/main/java/org/apache/flink/api/connector/source/ReaderOutput.java" name="ReaderOutput" >}} 上创建并发布局部分片输出。有关详细信息，请参阅该类和方法的 Java 文档。
+
+#### Split Level Watermark Alignment
+
+Although source operator watermark alignment is handled by Flink runtime, the source needs to additionally implement `SourceReader#pauseOrResumeSplits` and `SplitReader#pauseOrResumeSplits` to achieve split level watermark alignment. Split level watermark alignment is useful for when
+there are multiple splits assigned to a source reader. By default, these implementations will throw an `UnsupportedOperationException`, `pipeline.watermark-alignment.allow-unaligned-source-splits` is set to false, when there is more than one split assigned, and the split exceeds the watermark alignment threshold configured by the `WatermarkStrategy`. `SourceReaderBase`
+contains an implementation for `SourceReader#pauseOrResumeSplits` so that inheriting sources only need to implement `SplitReader#pauseOrResumeSplits`. See the javadocs for more implementation hints.

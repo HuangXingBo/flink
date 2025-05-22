@@ -27,12 +27,14 @@ import org.apache.flink.streaming.api.datastream.CustomSinkOperatorUidHashes;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.sink.OutputFormatSinkFunction;
-import org.apache.flink.streaming.api.functions.sink.SinkFunction;
+import org.apache.flink.streaming.api.functions.sink.legacy.OutputFormatSinkFunction;
+import org.apache.flink.streaming.api.functions.sink.legacy.SinkFunction;
+import org.apache.flink.streaming.api.lineage.LineageDataset;
+import org.apache.flink.streaming.api.lineage.LineageVertex;
 import org.apache.flink.streaming.api.operators.SimpleOperatorFactory;
 import org.apache.flink.streaming.api.transformations.LegacySinkTransformation;
-import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
+import org.apache.flink.streaming.api.transformations.TransformationWithLineage;
 import org.apache.flink.streaming.runtime.partitioner.KeyGroupStreamPartitioner;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
@@ -44,14 +46,15 @@ import org.apache.flink.table.connector.sink.DataStreamSinkProvider;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.connector.sink.DynamicTableSink.SinkRuntimeProvider;
 import org.apache.flink.table.connector.sink.OutputFormatProvider;
-import org.apache.flink.table.connector.sink.SinkFunctionProvider;
-import org.apache.flink.table.connector.sink.SinkProvider;
 import org.apache.flink.table.connector.sink.SinkV2Provider;
 import org.apache.flink.table.connector.sink.abilities.SupportsRowLevelDelete;
 import org.apache.flink.table.connector.sink.abilities.SupportsRowLevelUpdate;
+import org.apache.flink.table.connector.sink.legacy.SinkFunctionProvider;
 import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.planner.codegen.EqualiserCodeGenerator;
 import org.apache.flink.table.planner.connectors.TransformationSinkProvider;
+import org.apache.flink.table.planner.lineage.TableLineageUtils;
+import org.apache.flink.table.planner.lineage.TableSinkLineageVertex;
+import org.apache.flink.table.planner.lineage.TableSinkLineageVertexImpl;
 import org.apache.flink.table.planner.plan.abilities.sink.RowLevelDeleteSpec;
 import org.apache.flink.table.planner.plan.abilities.sink.RowLevelUpdateSpec;
 import org.apache.flink.table.planner.plan.abilities.sink.SinkAbilitySpec;
@@ -62,39 +65,29 @@ import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeContext;
 import org.apache.flink.table.planner.plan.nodes.exec.InputProperty;
 import org.apache.flink.table.planner.plan.nodes.exec.MultipleTransformationTranslator;
 import org.apache.flink.table.planner.plan.nodes.exec.spec.DynamicTableSinkSpec;
-import org.apache.flink.table.planner.plan.nodes.exec.stream.StreamExecNode;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodeUtil;
 import org.apache.flink.table.planner.plan.nodes.exec.utils.TransformationMetadata;
 import org.apache.flink.table.planner.plan.utils.KeySelectorUtil;
-import org.apache.flink.table.planner.typeutils.RowTypeUtils;
 import org.apache.flink.table.runtime.connector.sink.SinkRuntimeProviderContext;
-import org.apache.flink.table.runtime.generated.GeneratedRecordEqualiser;
 import org.apache.flink.table.runtime.keyselector.RowDataKeySelector;
-import org.apache.flink.table.runtime.operators.sink.ConstraintEnforcer;
 import org.apache.flink.table.runtime.operators.sink.RowKindSetter;
 import org.apache.flink.table.runtime.operators.sink.SinkOperator;
-import org.apache.flink.table.runtime.operators.sink.SinkUpsertMaterializer;
 import org.apache.flink.table.runtime.operators.sink.StreamRecordTimestampInserter;
-import org.apache.flink.table.runtime.typeutils.InternalSerializers;
+import org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcer;
+import org.apache.flink.table.runtime.operators.sink.constraint.ConstraintEnforcerExecutor;
 import org.apache.flink.table.runtime.typeutils.InternalTypeInfo;
-import org.apache.flink.table.runtime.util.StateConfigUtil;
-import org.apache.flink.table.types.logical.BinaryType;
-import org.apache.flink.table.types.logical.CharType;
 import org.apache.flink.table.types.logical.LogicalType;
-import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.RowType;
-import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.util.TemporaryClassLoaderContext;
 
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 /**
  * Base {@link ExecNode} to write data to an external sink defined by a {@link DynamicTableSink}.
@@ -116,7 +109,7 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
 
     private final ChangelogMode inputChangelogMode;
     private final boolean isBounded;
-    private boolean sinkParallelismConfigured;
+    protected boolean sinkParallelismConfigured;
 
     protected CommonExecSink(
             int id,
@@ -155,7 +148,9 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
             int[] inputUpsertKey) {
         final ResolvedSchema schema = tableSinkSpec.getContextResolvedTable().getResolvedSchema();
         final SinkRuntimeProvider runtimeProvider =
-                tableSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(isBounded));
+                tableSink.getSinkRuntimeProvider(
+                        new SinkRuntimeProviderContext(
+                                isBounded, tableSinkSpec.getTargetColumns()));
         final RowType physicalRowType = getPhysicalRowType(schema);
         final int[] primaryKeys = getPrimaryKeyIndices(physicalRowType, schema);
         final int sinkParallelism = deriveSinkParallelism(inputTransform, runtimeProvider);
@@ -178,6 +173,18 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
                             sinkParallelism,
                             inputParallelism));
         }
+
+        Object outputObject = null;
+        if (runtimeProvider instanceof OutputFormatProvider) {
+            outputObject = ((OutputFormatProvider) runtimeProvider).createOutputFormat();
+        } else if (runtimeProvider instanceof SinkFunctionProvider) {
+            outputObject = ((SinkFunctionProvider) runtimeProvider).createSinkFunction();
+        } else if (runtimeProvider instanceof SinkV2Provider) {
+            outputObject = ((SinkV2Provider) runtimeProvider).createSink();
+        }
+
+        Optional<LineageVertex> lineageVertexOpt =
+                TableLineageUtils.extractLineageDataset(outputObject);
 
         // only add materialization if input has change
         final boolean needMaterialization = !inputInsertOnly && upsertMaterialize;
@@ -214,15 +221,31 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
             sinkTransform = applyRowKindSetter(sinkTransform, targetRowKind.get(), config);
         }
 
-        return (Transformation<Object>)
-                applySinkProvider(
-                        sinkTransform,
-                        streamExecEnv,
-                        runtimeProvider,
-                        rowtimeFieldIndex,
-                        sinkParallelism,
-                        config,
-                        classLoader);
+        LineageDataset tableLineageDataset =
+                TableLineageUtils.createTableLineageDataset(
+                        tableSinkSpec.getContextResolvedTable(), lineageVertexOpt);
+
+        TableSinkLineageVertex sinkLineageVertex =
+                new TableSinkLineageVertexImpl(
+                        Arrays.asList(tableLineageDataset),
+                        TableLineageUtils.convert(inputChangelogMode));
+
+        Transformation transformation =
+                (Transformation<Object>)
+                        applySinkProvider(
+                                sinkTransform,
+                                streamExecEnv,
+                                runtimeProvider,
+                                rowtimeFieldIndex,
+                                sinkParallelism,
+                                config,
+                                classLoader);
+
+        if (transformation instanceof TransformationWithLineage) {
+            ((TransformationWithLineage<Object>) transformation)
+                    .setLineageVertex(sinkLineageVertex);
+        }
+        return transformation;
     }
 
     /**
@@ -232,112 +255,38 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
             Transformation<RowData> inputTransform,
             ExecNodeConfig config,
             RowType physicalRowType) {
-        final ConstraintEnforcer.Builder validatorBuilder = ConstraintEnforcer.newBuilder();
-        final String[] fieldNames = physicalRowType.getFieldNames().toArray(new String[0]);
+        final Optional<ConstraintEnforcerExecutor> enforcerExecutor =
+                ConstraintEnforcerExecutor.create(
+                        physicalRowType,
+                        config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_NOT_NULL_ENFORCER),
+                        config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_TYPE_LENGTH_ENFORCER),
+                        config.get(
+                                ExecutionConfigOptions.TABLE_EXEC_SINK_NESTED_CONSTRAINT_ENFORCER));
 
-        // Build NOT NULL enforcer
-        final int[] notNullFieldIndices = getNotNullFieldIndices(physicalRowType);
-        if (notNullFieldIndices.length > 0) {
-            final ExecutionConfigOptions.NotNullEnforcer notNullEnforcer =
-                    config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_NOT_NULL_ENFORCER);
-            final List<String> notNullFieldNames =
-                    Arrays.stream(notNullFieldIndices)
-                            .mapToObj(idx -> fieldNames[idx])
-                            .collect(Collectors.toList());
+        return enforcerExecutor
+                .map(
+                        executor -> {
+                            final String operatorName =
+                                    "ConstraintEnforcer["
+                                            + Arrays.stream(executor.getConstraints())
+                                                    .map(Objects::toString)
+                                                    .collect(Collectors.joining(", "))
+                                            + "]";
 
-            validatorBuilder.addNotNullConstraint(
-                    notNullEnforcer, notNullFieldIndices, notNullFieldNames, fieldNames);
-        }
-
-        final ExecutionConfigOptions.TypeLengthEnforcer typeLengthEnforcer =
-                config.get(ExecutionConfigOptions.TABLE_EXEC_SINK_TYPE_LENGTH_ENFORCER);
-
-        // Build CHAR/VARCHAR length enforcer
-        final List<ConstraintEnforcer.FieldInfo> charFieldInfo =
-                getFieldInfoForLengthEnforcer(physicalRowType, LengthEnforcerType.CHAR);
-        if (!charFieldInfo.isEmpty()) {
-            final List<String> charFieldNames =
-                    charFieldInfo.stream()
-                            .map(cfi -> fieldNames[cfi.fieldIdx()])
-                            .collect(Collectors.toList());
-
-            validatorBuilder.addCharLengthConstraint(
-                    typeLengthEnforcer, charFieldInfo, charFieldNames, fieldNames);
-        }
-
-        // Build BINARY/VARBINARY length enforcer
-        final List<ConstraintEnforcer.FieldInfo> binaryFieldInfo =
-                getFieldInfoForLengthEnforcer(physicalRowType, LengthEnforcerType.BINARY);
-        if (!binaryFieldInfo.isEmpty()) {
-            final List<String> binaryFieldNames =
-                    binaryFieldInfo.stream()
-                            .map(cfi -> fieldNames[cfi.fieldIdx()])
-                            .collect(Collectors.toList());
-
-            validatorBuilder.addBinaryLengthConstraint(
-                    typeLengthEnforcer, binaryFieldInfo, binaryFieldNames, fieldNames);
-        }
-
-        ConstraintEnforcer constraintEnforcer = validatorBuilder.build();
-        if (constraintEnforcer != null) {
-            return ExecNodeUtil.createOneInputTransformation(
-                    inputTransform,
-                    createTransformationMeta(
-                            CONSTRAINT_VALIDATOR_TRANSFORMATION,
-                            constraintEnforcer.getOperatorName(),
-                            "ConstraintEnforcer",
-                            config),
-                    constraintEnforcer,
-                    getInputTypeInfo(),
-                    inputTransform.getParallelism(),
-                    false);
-        } else {
-            // there are no not-null fields, just skip adding the enforcer operator
-            return inputTransform;
-        }
-    }
-
-    private int[] getNotNullFieldIndices(RowType physicalType) {
-        return IntStream.range(0, physicalType.getFieldCount())
-                .filter(pos -> !physicalType.getTypeAt(pos).isNullable())
-                .toArray();
-    }
-
-    /**
-     * Returns a List of {@link ConstraintEnforcer.FieldInfo}, each containing the info needed to
-     * determine whether a string or binary value needs trimming and/or padding.
-     */
-    private List<ConstraintEnforcer.FieldInfo> getFieldInfoForLengthEnforcer(
-            RowType physicalType, LengthEnforcerType enforcerType) {
-        LogicalTypeRoot staticType = null;
-        LogicalTypeRoot variableType = null;
-        int maxLength = 0;
-        switch (enforcerType) {
-            case CHAR:
-                staticType = LogicalTypeRoot.CHAR;
-                variableType = LogicalTypeRoot.VARCHAR;
-                maxLength = CharType.MAX_LENGTH;
-                break;
-            case BINARY:
-                staticType = LogicalTypeRoot.BINARY;
-                variableType = LogicalTypeRoot.VARBINARY;
-                maxLength = BinaryType.MAX_LENGTH;
-        }
-        final List<ConstraintEnforcer.FieldInfo> fieldsAndLengths = new ArrayList<>();
-        for (int i = 0; i < physicalType.getFieldCount(); i++) {
-            LogicalType type = physicalType.getTypeAt(i);
-            boolean isStatic = type.is(staticType);
-            // Should trim and possibly pad
-            if ((isStatic && (LogicalTypeChecks.getLength(type) < maxLength))
-                    || (type.is(variableType) && (LogicalTypeChecks.getLength(type) < maxLength))) {
-                fieldsAndLengths.add(
-                        new ConstraintEnforcer.FieldInfo(
-                                i, LogicalTypeChecks.getLength(type), isStatic));
-            } else if (isStatic) { // Should pad
-                fieldsAndLengths.add(new ConstraintEnforcer.FieldInfo(i, null, isStatic));
-            }
-        }
-        return fieldsAndLengths;
+                            return (Transformation<RowData>)
+                                    ExecNodeUtil.createOneInputTransformation(
+                                            inputTransform,
+                                            createTransformationMeta(
+                                                    CONSTRAINT_VALIDATOR_TRANSFORMATION,
+                                                    operatorName,
+                                                    "ConstraintEnforcer",
+                                                    config),
+                                            new ConstraintEnforcer(executor, operatorName),
+                                            getInputTypeInfo(),
+                                            inputTransform.getParallelism(),
+                                            false);
+                        })
+                .orElse(inputTransform);
     }
 
     /**
@@ -416,61 +365,14 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
         return partitionedTransform;
     }
 
-    private Transformation<RowData> applyUpsertMaterialize(
+    protected abstract Transformation<RowData> applyUpsertMaterialize(
             Transformation<RowData> inputTransform,
             int[] primaryKeys,
             int sinkParallelism,
             ExecNodeConfig config,
             ClassLoader classLoader,
             RowType physicalRowType,
-            int[] inputUpsertKey) {
-        final GeneratedRecordEqualiser rowEqualiser =
-                new EqualiserCodeGenerator(physicalRowType, classLoader)
-                        .generateRecordEqualiser("SinkMaterializeEqualiser");
-        final GeneratedRecordEqualiser upsertKeyEqualiser =
-                inputUpsertKey == null
-                        ? null
-                        : new EqualiserCodeGenerator(
-                                        RowTypeUtils.projectRowType(
-                                                physicalRowType, inputUpsertKey),
-                                        classLoader)
-                                .generateRecordEqualiser("SinkMaterializeUpsertKeyEqualiser");
-
-        SinkUpsertMaterializer operator =
-                new SinkUpsertMaterializer(
-                        StateConfigUtil.createTtlConfig(
-                                config.get(ExecutionConfigOptions.IDLE_STATE_RETENTION).toMillis()),
-                        InternalSerializers.create(physicalRowType),
-                        rowEqualiser,
-                        upsertKeyEqualiser,
-                        inputUpsertKey);
-        final String[] fieldNames = physicalRowType.getFieldNames().toArray(new String[0]);
-        final List<String> pkFieldNames =
-                Arrays.stream(primaryKeys)
-                        .mapToObj(idx -> fieldNames[idx])
-                        .collect(Collectors.toList());
-
-        OneInputTransformation<RowData, RowData> materializeTransform =
-                ExecNodeUtil.createOneInputTransformation(
-                        inputTransform,
-                        createTransformationMeta(
-                                UPSERT_MATERIALIZE_TRANSFORMATION,
-                                String.format(
-                                        "SinkMaterializer(pk=[%s])",
-                                        String.join(", ", pkFieldNames)),
-                                "SinkMaterializer",
-                                config),
-                        operator,
-                        inputTransform.getOutputType(),
-                        sinkParallelism,
-                        sinkParallelismConfigured);
-        RowDataKeySelector keySelector =
-                KeySelectorUtil.getRowDataSelector(
-                        classLoader, primaryKeys, InternalTypeInfo.of(physicalRowType));
-        materializeTransform.setStateKeySelector(keySelector);
-        materializeTransform.setStateKeyType(keySelector.getProducedType());
-        return materializeTransform;
-    }
+            int[] inputUpsertKey);
 
     private Transformation<RowData> applyRowKindSetter(
             Transformation<RowData> inputTransform, RowKind rowKind, ExecNodeConfig config) {
@@ -548,20 +450,6 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
                         rowtimeFieldIndex,
                         sinkMeta,
                         sinkParallelism);
-            } else if (runtimeProvider instanceof SinkProvider) {
-                Transformation<RowData> sinkTransformation =
-                        applyRowtimeTransformation(
-                                inputTransform, rowtimeFieldIndex, sinkParallelism, config);
-                final DataStream<RowData> dataStream = new DataStream<>(env, sinkTransformation);
-                final Transformation<?> transformation =
-                        DataStreamSink.forSinkV1(
-                                        dataStream,
-                                        ((SinkProvider) runtimeProvider).createSink(),
-                                        CustomSinkOperatorUidHashes.DEFAULT)
-                                .getTransformation();
-                transformation.setParallelism(sinkParallelism, sinkParallelismConfigured);
-                sinkMeta.fill(transformation);
-                return transformation;
             } else if (runtimeProvider instanceof SinkV2Provider) {
                 Transformation<RowData> sinkTransformation =
                         applyRowtimeTransformation(
@@ -584,7 +472,7 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
 
     private ProviderContext createProviderContext(ExecNodeConfig config) {
         return name -> {
-            if (this instanceof StreamExecNode && config.shouldSetUid()) {
+            if (config.shouldSetUid()) {
                 return Optional.of(createTransformationUid(name, config));
             }
             return Optional.empty();
@@ -644,19 +532,14 @@ public abstract class CommonExecSink extends ExecNodeBase<Object>
         return InternalTypeInfo.of(getInputEdges().get(0).getOutputType());
     }
 
-    private int[] getPrimaryKeyIndices(RowType sinkRowType, ResolvedSchema schema) {
+    protected int[] getPrimaryKeyIndices(RowType sinkRowType, ResolvedSchema schema) {
         return schema.getPrimaryKey()
                 .map(k -> k.getColumns().stream().mapToInt(sinkRowType::getFieldIndex).toArray())
                 .orElse(new int[0]);
     }
 
-    private RowType getPhysicalRowType(ResolvedSchema schema) {
+    protected RowType getPhysicalRowType(ResolvedSchema schema) {
         return (RowType) schema.toPhysicalRowDataType().getLogicalType();
-    }
-
-    private enum LengthEnforcerType {
-        CHAR,
-        BINARY
     }
 
     /**

@@ -73,7 +73,7 @@ Number Sequence
 Kafka
 =====
 
-Kakfa Producer and Consumer
+Kafka Producer and Consumer
 ---------------------------
 
 .. currentmodule:: pyflink.datastream.connectors.kafka
@@ -149,10 +149,9 @@ Pulsar Source
 .. autosummary::
     :toctree: api/
 
-    PulsarDeserializationSchema
-    SubscriptionType
     StartCursor
     StopCursor
+    RangeGenerator
     PulsarSource
     PulsarSourceBuilder
 
@@ -165,7 +164,6 @@ Pulsar Sink
 .. autosummary::
     :toctree: api/
 
-    PulsarSerializationSchema
     TopicRoutingMode
     MessageDelayer
     PulsarSink

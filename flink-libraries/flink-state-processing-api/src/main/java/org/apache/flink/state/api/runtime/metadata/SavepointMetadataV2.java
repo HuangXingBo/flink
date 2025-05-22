@@ -25,12 +25,12 @@ import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.state.api.OperatorIdentifier;
 import org.apache.flink.state.api.StateBootstrapTransformation;
 import org.apache.flink.state.api.runtime.StateBootstrapTransformationWithID;
+import org.apache.flink.util.CollectionUtil;
 import org.apache.flink.util.Preconditions;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -41,6 +41,8 @@ import static org.apache.flink.runtime.state.KeyGroupRangeAssignment.UPPER_BOUND
 @Internal
 public class SavepointMetadataV2 {
 
+    private final long checkpointId;
+
     private final int maxParallelism;
 
     private final Collection<MasterState> masterStates;
@@ -48,6 +50,7 @@ public class SavepointMetadataV2 {
     private final Map<OperatorID, OperatorStateSpecV2> operatorStateIndex;
 
     public SavepointMetadataV2(
+            long checkpointId,
             int maxParallelism,
             Collection<MasterState> masterStates,
             Collection<OperatorState> initialStates) {
@@ -59,15 +62,20 @@ public class SavepointMetadataV2 {
                         + maxParallelism);
         Preconditions.checkNotNull(masterStates);
 
+        this.checkpointId = checkpointId;
         this.maxParallelism = maxParallelism;
         this.masterStates = new ArrayList<>(masterStates);
-        this.operatorStateIndex = new HashMap<>(initialStates.size());
+        this.operatorStateIndex = CollectionUtil.newHashMapWithExpectedSize(initialStates.size());
 
         initialStates.forEach(
                 existingState ->
                         operatorStateIndex.put(
                                 existingState.getOperatorID(),
                                 OperatorStateSpecV2.existing(existingState)));
+    }
+
+    public long getCheckpointId() {
+        return checkpointId;
     }
 
     public int getMaxParallelism() {
@@ -119,10 +127,12 @@ public class SavepointMetadataV2 {
         operatorStateIndex.put(
                 id,
                 OperatorStateSpecV2.newWithTransformation(
-                        new StateBootstrapTransformationWithID<>(id, transformation)));
+                        new StateBootstrapTransformationWithID<>(identifier, transformation)));
     }
 
-    /** @return List of {@link OperatorState} that already exists within the savepoint. */
+    /**
+     * @return List of {@link OperatorState} that already exists within the savepoint.
+     */
     public List<OperatorState> getExistingOperators() {
         return operatorStateIndex.values().stream()
                 .filter(OperatorStateSpecV2::isExistingState)

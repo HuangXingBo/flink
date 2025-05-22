@@ -18,6 +18,7 @@
 package org.apache.flink.table.planner.plan.metadata
 
 import org.apache.flink.table.catalog.{CatalogTable, ResolvedCatalogBaseTable}
+import org.apache.flink.table.connector.ChangelogMode
 import org.apache.flink.table.planner._
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory
 import org.apache.flink.table.planner.plan.nodes.calcite.{Expand, Rank, WatermarkAssigner, WindowAggregate}
@@ -25,10 +26,11 @@ import org.apache.flink.table.planner.plan.nodes.physical.batch._
 import org.apache.flink.table.planner.plan.nodes.physical.common.CommonPhysicalLookupJoin
 import org.apache.flink.table.planner.plan.nodes.physical.stream._
 import org.apache.flink.table.planner.plan.schema.{FlinkPreparingTableBase, TableSourceTable}
-import org.apache.flink.table.planner.plan.utils.{FlinkRelMdUtil, RankUtil}
+import org.apache.flink.table.planner.plan.utils.{ChangelogPlanUtils, FlinkRelMdUtil, RankUtil}
 import org.apache.flink.table.runtime.groupwindow.NamedWindowProperty
-import org.apache.flink.table.runtime.operators.rank.{ConstantRankRange, RankType}
+import org.apache.flink.table.runtime.operators.rank.RankType
 import org.apache.flink.table.types.logical.utils.LogicalTypeCasts
+import org.apache.flink.types.RowKind
 
 import com.google.common.collect.ImmutableSet
 import org.apache.calcite.plan.RelOptTable
@@ -110,6 +112,14 @@ class FlinkRelMdUniqueKeys private extends MetadataHandler[BuiltInMetadata.Uniqu
     val input = calc.getInput
     val projects = calc.getProgram.getProjectList.map(calc.getProgram.expandLocalRef)
     getProjectUniqueKeys(projects, input, mq, ignoreNulls)
+  }
+
+  def getUniqueKeys(
+      rel: StreamPhysicalMiniBatchAssigner,
+      mq: RelMetadataQuery,
+      ignoreNulls: Boolean): JSet[ImmutableBitSet] = {
+
+    mq.getUniqueKeys(rel.getInput, ignoreNulls)
   }
 
   private def getProjectUniqueKeys(
@@ -282,19 +292,9 @@ class FlinkRelMdUniqueKeys private extends MetadataHandler[BuiltInMetadata.Uniqu
 
   def getRankUniqueKeys(rel: Rank, inputKeys: JSet[ImmutableBitSet]): JSet[ImmutableBitSet] = {
     val rankFunColumnIndex = RankUtil.getRankNumberColumnIndex(rel).getOrElse(-1)
-    // for Rank node that can convert to Deduplicate, unique key is partition key
-    val canConvertToDeduplicate: Boolean = {
-      val rankRange = rel.rankRange
-      val isRowNumberType = rel.rankType == RankType.ROW_NUMBER
-      val isLimit1 = rankRange match {
-        case rankRange: ConstantRankRange =>
-          rankRange.getRankStart == 1 && rankRange.getRankEnd == 1
-        case _ => false
-      }
-      isRowNumberType && isLimit1
-    }
 
-    if (canConvertToDeduplicate) {
+    if (RankUtil.isDeduplication(rel)) {
+      // for Rank node that can convert to Deduplicate, unique key is partition key
       val retSet = new JHashSet[ImmutableBitSet]
       retSet.add(rel.partitionKey)
       retSet
@@ -316,13 +316,6 @@ class FlinkRelMdUniqueKeys private extends MetadataHandler[BuiltInMetadata.Uniqu
 
   def getUniqueKeys(rel: Sort, mq: RelMetadataQuery, ignoreNulls: Boolean): JSet[ImmutableBitSet] =
     mq.getUniqueKeys(rel.getInput, ignoreNulls)
-
-  def getUniqueKeys(
-      rel: StreamPhysicalDeduplicate,
-      mq: RelMetadataQuery,
-      ignoreNulls: Boolean): JSet[ImmutableBitSet] = {
-    ImmutableSet.of(ImmutableBitSet.of(rel.getUniqueKeys.map(Integer.valueOf).toList))
-  }
 
   def getUniqueKeys(
       rel: StreamPhysicalChangelogNormalize,
@@ -652,6 +645,31 @@ class FlinkRelMdUniqueKeys private extends MetadataHandler[BuiltInMetadata.Uniqu
       mq: RelMetadataQuery,
       ignoreNulls: Boolean): JSet[ImmutableBitSet] = {
     mq.getUniqueKeys(subset.getInput, ignoreNulls)
+  }
+
+  def getUniqueKeys(
+      rel: StreamPhysicalProcessTableFunction,
+      mq: RelMetadataQuery,
+      ignoreNulls: Boolean): JSet[ImmutableBitSet] = {
+    getPtfUniqueKeys(rel)
+  }
+
+  def getPtfUniqueKeys(rel: StreamPhysicalProcessTableFunction): JSet[ImmutableBitSet] = {
+    ChangelogPlanUtils.getChangelogMode(rel) match {
+      case None =>
+        // Not enough information
+        null
+      case Some(mode: ChangelogMode) =>
+        val isUpsert = mode.contains(RowKind.UPDATE_AFTER) && !mode.contains(RowKind.UPDATE_BEFORE)
+        if (isUpsert) {
+          // Upsert PTFs use the partition keys as upsert keys,
+          // thus the keys are unique
+          val partitionColumns = StreamPhysicalProcessTableFunction.toPartitionColumns(rel.getCall)
+          ImmutableSet.of(partitionColumns)
+        } else {
+          null
+        }
+    }
   }
 
   // Catch-all rule when none of the others apply.

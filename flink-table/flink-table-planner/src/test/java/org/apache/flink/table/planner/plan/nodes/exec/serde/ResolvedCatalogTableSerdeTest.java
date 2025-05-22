@@ -27,6 +27,7 @@ import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ExternalCatalogTable;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.catalog.ResolvedSchema;
+import org.apache.flink.table.catalog.TableDistribution;
 import org.apache.flink.table.catalog.UniqueConstraint;
 import org.apache.flink.table.catalog.WatermarkSpec;
 import org.apache.flink.table.planner.calcite.FlinkTypeFactory;
@@ -52,11 +53,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import static org.apache.flink.table.planner.plan.nodes.exec.serde.CompiledPlanSerdeUtil.createJsonObjectReader;
 import static org.apache.flink.table.planner.plan.nodes.exec.serde.JsonSerdeTestUtil.assertThatJsonContains;
 import static org.apache.flink.table.planner.plan.nodes.exec.serde.JsonSerdeTestUtil.assertThatJsonDoesNotContain;
 import static org.apache.flink.table.planner.plan.nodes.exec.serde.JsonSerdeTestUtil.configuredSerdeContext;
 import static org.apache.flink.table.planner.plan.nodes.exec.serde.JsonSerdeTestUtil.testJsonRoundTrip;
-import static org.apache.flink.table.planner.plan.nodes.exec.serde.JsonSerdeUtil.createObjectReader;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.parallel.ExecutionMode.CONCURRENT;
@@ -96,11 +97,17 @@ class ResolvedCatalogTableSerdeTest {
 
     private static final ResolvedCatalogTable FULL_RESOLVED_CATALOG_TABLE =
             new ResolvedCatalogTable(
-                    CatalogTable.of(
-                            Schema.newBuilder().fromResolvedSchema(FULL_RESOLVED_SCHEMA).build(),
-                            "my table",
-                            Collections.singletonList("c"),
-                            OPTIONS),
+                    CatalogTable.newBuilder()
+                            .schema(
+                                    Schema.newBuilder()
+                                            .fromResolvedSchema(FULL_RESOLVED_SCHEMA)
+                                            .build())
+                            .comment("my table")
+                            .distribution(
+                                    TableDistribution.ofHash(Collections.singletonList("a"), 1))
+                            .partitionKeys(Collections.singletonList("c"))
+                            .options(OPTIONS)
+                            .build(),
                     FULL_RESOLVED_SCHEMA);
 
     static Stream<ResolvedCatalogTable> testResolvedCatalogTableSerde() {
@@ -119,11 +126,17 @@ class ResolvedCatalogTableSerdeTest {
         return Stream.of(
                 FULL_RESOLVED_CATALOG_TABLE,
                 new ResolvedCatalogTable(
-                        CatalogTable.of(
-                                Schema.newBuilder().fromResolvedSchema(withoutPartitionKey).build(),
-                                null,
-                                Collections.singletonList("c"),
-                                OPTIONS),
+                        CatalogTable.newBuilder()
+                                .schema(
+                                        Schema.newBuilder()
+                                                .fromResolvedSchema(withoutPartitionKey)
+                                                .build())
+                                .comment(null)
+                                .distribution(
+                                        TableDistribution.ofHash(Collections.singletonList("a"), 1))
+                                .partitionKeys(Collections.singletonList("c"))
+                                .options(OPTIONS)
+                                .build(),
                         withoutPartitionKey));
     }
 
@@ -138,37 +151,43 @@ class ResolvedCatalogTableSerdeTest {
         SerdeContext serdeCtx = configuredSerdeContext();
 
         byte[] actualSerialized =
-                JsonSerdeUtil.createObjectWriter(serdeCtx)
+                CompiledPlanSerdeUtil.createJsonObjectWriter(serdeCtx)
                         .withAttribute(ResolvedCatalogTableJsonSerializer.SERIALIZE_OPTIONS, false)
                         .writeValueAsBytes(FULL_RESOLVED_CATALOG_TABLE);
 
-        final ObjectReader objectReader = createObjectReader(serdeCtx);
+        final ObjectReader objectReader = createJsonObjectReader(serdeCtx);
         JsonNode actualJson = objectReader.readTree(actualSerialized);
         assertThatJsonContains(actualJson, ResolvedCatalogTableJsonSerializer.RESOLVED_SCHEMA);
         assertThatJsonContains(actualJson, ResolvedCatalogTableJsonSerializer.PARTITION_KEYS);
+        assertThatJsonContains(actualJson, ResolvedCatalogTableJsonSerializer.DISTRIBUTION);
         assertThatJsonDoesNotContain(actualJson, ResolvedCatalogTableJsonSerializer.OPTIONS);
         assertThatJsonDoesNotContain(actualJson, ResolvedCatalogTableJsonSerializer.COMMENT);
 
         ResolvedCatalogTable actual =
                 objectReader.readValue(actualSerialized, ResolvedCatalogTable.class);
 
-        assertThat(actual)
-                .isEqualTo(
-                        new ResolvedCatalogTable(
-                                CatalogTable.of(
+        ResolvedCatalogTable expected =
+                new ResolvedCatalogTable(
+                        CatalogTable.newBuilder()
+                                .schema(
                                         Schema.newBuilder()
                                                 .fromResolvedSchema(FULL_RESOLVED_SCHEMA)
-                                                .build(),
-                                        null,
-                                        Collections.singletonList("c"),
-                                        Collections.emptyMap()),
-                                FULL_RESOLVED_SCHEMA));
+                                                .build())
+                                .comment(null)
+                                .distribution(
+                                        TableDistribution.ofHash(Collections.singletonList("a"), 1))
+                                .partitionKeys(Collections.singletonList("c"))
+                                .options(Collections.emptyMap())
+                                .build(),
+                        FULL_RESOLVED_SCHEMA);
+
+        assertThat(actual).isEqualTo(expected);
     }
 
     @Test
     void testDontSerializeExternalInlineTable() {
         SerdeContext serdeCtx = configuredSerdeContext();
-        ObjectWriter objectWriter = JsonSerdeUtil.createObjectWriter(serdeCtx);
+        ObjectWriter objectWriter = CompiledPlanSerdeUtil.createJsonObjectWriter(serdeCtx);
 
         assertThatThrownBy(
                         () ->

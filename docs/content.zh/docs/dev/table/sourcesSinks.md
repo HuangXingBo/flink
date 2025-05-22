@@ -65,7 +65,7 @@ Table API 和 SQL 都是声明式 API。这包括表的声明。因此，执行 
 
 `DynamicTableSourceFactory` 和 `DynamicTableSinkFactory` 提供连接器特定的逻辑，用于将 `CatalogTable` 的元数据转换为 `DynamicTableSource` 和 `DynamicTableSink` 的实例。在大多数情况下，以工厂模式设计的目的是验证选项（例如示例中的 `'port'` = `'5022'` ），配置编码解码格式（ 如果需要 ），并创建表连接器的参数化实例。
 
-默认情况下，`DynamicTableSourceFactory` 和 `DynamicTableSinkFactory` 的实例是使用 Java的 [Service Provider Interfaces (SPI)] (https://docs.oracle.com/javase/tutorial/sound/SPI-intro.html) 发现的。 `connector` 选项（例如示例中的 `'connector' = 'custom'`）必须对应于有效的工厂标识符。
+默认情况下，`DynamicTableSourceFactory` 和 `DynamicTableSinkFactory` 的实例是使用 Java的 [Service Provider Interfaces (SPI)](https://docs.oracle.com/javase/tutorial/sound/SPI-intro.html) 发现的。 `connector` 选项（例如示例中的 `'connector' = 'custom'`）必须对应于有效的工厂标识符。
 
 
 尽管在类命名中可能不明显，但 `DynamicTableSource` 和 `DynamicTableSink` 也可以被视为有状态的工厂，它们最终会产生具体的运行时实现来读写实际数据。
@@ -158,7 +158,11 @@ Flink 会对工厂类逐个进行检查，确保其“标识符”是全局唯�
 
 可以实现更多的功能接口来优化数据源，比如实现 `SupportsProjectionPushDown` 接口，这样在运行时在 source 端就处理数据。在 `org.apache.flink.table.connector.source.abilities` 包下可以找到各种功能接口，更多内容可查看 [source abilities table](#source-abilities)。
 
-实现 `ScanTableSource` 接口的类必须能够生产 Flink 内部数据结构，因此每条记录都会按照`org.apache.flink.table.data.RowData` 的方式进行处理。Flink 运行时提供了转换机制保证 source 端可以处理常见的数据结构，并且在最后进行转换。
+返回的 **_scan runtime provider_** 提供了读取数据的运行时实现。有多种运行时实现的接口，其中 `SourceProvider` 是推荐使用的核心接口。
+
+不管使用那种运行时实现的接口，source 端的运行时实现必须能够生产 Flink 内部数据结构，因此每条记录都会按照`org.apache.flink.table.data.RowData` 的方式进行处理。Flink 运行时提供了转换机制保证 source 端可以处理常见的数据结构，并且在最后进行转换。
+
+为了支持指定并行度，动态表的工厂类需要支持在 `org.apache.flink.table.factories.FactoryUtil` 中定义的 `scan.parallelism` 可选参数，并将参数的值传递给一个实现了 `ParallelismProvider` 接口的运行时实现接口。
 
 <a name="lookup-table-source"></a>
 
@@ -240,7 +244,11 @@ Flink 会对工厂类逐个进行检查，确保其“标识符”是全局唯�
 
 可以实现 `SupportsOverwrite` 等功能接口，在 sink 端处理数据。可以在 `org.apache.flink.table.connector.sink.abilities` 包下找到各种功能接口，更多内容可查看[sink abilities table](#sink-abilities)。
 
-实现 `DynamicTableSink` 接口的类必须能够处理 Flink 内部数据结构，因此每条记录都会按照 `org.apache.flink.table.data.RowData` 的方式进行处理。Flink 运行时提供了转换机制来保证在最开始进行数据类型转换，以便 sink 端可以处理常见的数据结构。
+返回的 **_sink runtime provider_** 提供了写出数据的运行时实现。有多种运行时实现的接口，其中 `SinkV2Provider` 是推荐使用的核心接口。
+
+不管使用那种运行时实现的接口，sink 端的运行时实现必须能够处理 Flink 内部数据结构，因此每条记录都会按照 `org.apache.flink.table.data.RowData` 的方式进行处理。Flink 运行时提供了转换机制来保证在最开始进行数据类型转换，以便 sink 端可以处理常见的数据结构。
+
+为了支持指定并行度，动态表的工厂类需要支持在 `org.apache.flink.table.factories.FactoryUtil` 中定义的 `sink.parallelism` 可选参数，并将参数的值传递给一个实现了 `ParallelismProvider` 接口的运行时实现接口。
 
 <a name="sink-abilities"></a>
 
@@ -260,23 +268,31 @@ Flink 会对工厂类逐个进行检查，确保其“标识符”是全局唯�
     </tr>
     <tr>
         <td>{{< gh_link file="flink-table/flink-table-common/src/main/java/org/apache/flink/table/connector/sink/abilities/SupportsPartitioning.java" name="SupportsPartitioning" >}}</td>
-        <td>支持 <code>DynamicTableSink</code> 写入元数据列。</td>
+        <td>支持 <code>DynamicTableSink</code> 写入分区数据。</td>
+    </tr>
+    <tr>
+        <td>{{< gh_link file="flink-table/flink-table-common/src/main/java/org/apache/flink/table/connector/source/abilities/SupportsBucketing.java" name="SupportsBucketing" >}}</td>
+        <td>Enables bucketing for a <code>DynamicTableSink</code>.</td>
     </tr>
     <tr>
         <td>{{< gh_link file="flink-table/flink-table-common/src/main/java/org/apache/flink/table/connector/sink/abilities/SupportsWritingMetadata.java" name="SupportsWritingMetadata" >}}</td>
-        <td>支持 <code>DynamicTableSource</code> 写入元数据列。sink 端会在消费数据行时，在最后接受相应的元数据信息并进行持久化，其中包括元数据的格式信息。</td>
+        <td>支持 <code>DynamicTableSink</code> 写入元数据列。Sink 端会在消费数据行时，在最后接受相应的元数据信息并进行持久化，其中包括元数据的格式信息。</td>
     </tr>
     <tr>
         <td>{{< gh_link file="flink-table/flink-table-common/src/main/java/org/apache/flink/table/connector/sink/abilities/SupportsDeletePushDown.java" name="SupportsDeletePushDown" >}}</td>
-        <td>支持将 <code>DELETE</code> 语句中的过滤条件下推到 <code>DynamicTableSink</code>，sink 端可以直接根据过滤条件来删除数据。
+        <td>支持将 <code>DELETE</code> 语句中的过滤条件下推到 <code>DynamicTableSink</code>，sink 端可以直接根据过滤条件来删除数据。</td>
     </tr>
     <tr>
         <td>{{< gh_link file="flink-table/flink-table-common/src/main/java/org/apache/flink/table/connector/sink/abilities/SupportsRowLevelDelete.java" name="SupportsRowLevelDelete" >}}</td>
-        <td>支持 <code>DynamicTableSink</code> 根据行级别的变更来删除已有的数据。该接口的实现者需要告诉 Planner 如何产生这些行变更，并且需要消费这些行变更从而达到删除数据的目的。
+        <td>支持 <code>DynamicTableSink</code> 根据行级别的变更来删除已有的数据。该接口的实现者需要告诉 Planner 如何产生这些行变更，并且需要消费这些行变更从而达到删除数据的目的。</td>
     </tr>
     <tr>
         <td>{{< gh_link file="flink-table/flink-table-common/src/main/java/org/apache/flink/table/connector/sink/abilities/SupportsRowLevelUpdate.java" name="SupportsRowLevelUpdate" >}}</td>
-        <td>支持 <code>DynamicTableSink</code> 根据行级别的变更来更新已有的数据。该接口的实现者需要告诉 Planner 如何产生这些行变更，并且需要消费这些行变更从而达到更新数据的目的。
+        <td>支持 <code>DynamicTableSink</code> 根据行级别的变更来更新已有的数据。该接口的实现者需要告诉 Planner 如何产生这些行变更，并且需要消费这些行变更从而达到更新数据的目的。</td>
+    </tr>
+    <tr>
+        <td>{{< gh_link file="flink-table/flink-table-common/src/main/java/org/apache/flink/table/connector/sink/abilities/SupportsStaging.java" name="SupportsStaging" >}}</td>
+        <td>支持 <code>DynamicTableSink</code> 提供 CTAS(CREATE TABLE AS SELECT) 或 RTAS([CREATE OR] REPLACE TABLE AS SELECT) 的原子性语义。该接口的实现者需要返回一个提供原子性语义实现的 <code>StagedTable</code> 对象。</td>
     </tr>
     </tbody>
 </table>
@@ -375,6 +391,9 @@ import org.apache.flink.table.factories.DynamicTableSourceFactory;
 import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.types.DataType;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class SocketDynamicTableFactory implements DynamicTableSourceFactory {
 
   // 定义所有配置项
@@ -457,6 +476,10 @@ import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.factories.DeserializationFormatFactory;
 import org.apache.flink.table.factories.DynamicTableFactory;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+
 public class ChangelogCsvFormatFactory implements DeserializationFormatFactory {
 
   // 定义所有配置项
@@ -509,12 +532,12 @@ public class ChangelogCsvFormatFactory implements DeserializationFormatFactory {
 
 ```java
 import org.apache.flink.api.common.serialization.DeserializationSchema;
+import org.apache.flink.legacy.table.connector.source.SourceFunctionProvider;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.table.connector.ChangelogMode;
 import org.apache.flink.table.connector.format.DecodingFormat;
 import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.connector.source.ScanTableSource;
-import org.apache.flink.table.connector.source.SourceFunctionProvider;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.DataType;
 
@@ -592,6 +615,8 @@ import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.types.RowKind;
 
+import java.util.List;
+
 public class ChangelogCsvFormat implements DecodingFormat<DeserializationSchema<RowData>> {
 
   private final String columnDelimiter;
@@ -606,8 +631,7 @@ public class ChangelogCsvFormat implements DecodingFormat<DeserializationSchema<
       DynamicTableSource.Context context,
       DataType producedDataType) {
     // 为 DeserializationSchema 创建类型信息
-    final TypeInformation<RowData> producedTypeInfo = (TypeInformation<RowData>) context.createTypeInformation(
-      producedDataType);
+    final TypeInformation<RowData> producedTypeInfo = context.createTypeInformation(producedDataType);
 
     // DeserializationSchema 中的大多数代码无法处理内部数据结构
     // 在最后为转换创建一个转换器
@@ -651,6 +675,9 @@ import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
+
+import java.util.List;
+import java.util.regex.Pattern;
 
 public class ChangelogCsvDeserializer implements DeserializationSchema<RowData> {
 
@@ -721,9 +748,13 @@ public class ChangelogCsvDeserializer implements DeserializationSchema<RowData> 
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.ResultTypeQueryable;
-import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.functions.source.RichSourceFunction;
 import org.apache.flink.table.data.RowData;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 
 public class SocketSourceFunction extends RichSourceFunction<RowData> implements ResultTypeQueryable<RowData> {
 
@@ -745,11 +776,6 @@ public class SocketSourceFunction extends RichSourceFunction<RowData> implements
   @Override
   public TypeInformation<RowData> getProducedType() {
     return deserializer.getProducedType();
-  }
-
-  @Override
-  public void open(Configuration parameters) throws Exception {
-    deserializer.open(() -> getRuntimeContext().getMetricGroup());
   }
 
   @Override

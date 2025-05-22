@@ -21,21 +21,26 @@ package org.apache.flink.runtime.rest.handler.legacy.metrics;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.runtime.messages.webmonitor.JobDetails;
 import org.apache.flink.runtime.messages.webmonitor.JobDetails.CurrentAttempts;
+import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.runtime.metrics.dump.MetricDump;
 import org.apache.flink.runtime.metrics.dump.QueryScopeInfo;
+import org.apache.flink.util.CollectionUtil;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.concurrent.ThreadSafe;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import static java.util.Collections.unmodifiableMap;
 import static java.util.Collections.unmodifiableSet;
@@ -44,6 +49,7 @@ import static org.apache.flink.runtime.metrics.dump.MetricDump.METRIC_CATEGORY_G
 import static org.apache.flink.runtime.metrics.dump.MetricDump.METRIC_CATEGORY_HISTOGRAM;
 import static org.apache.flink.runtime.metrics.dump.MetricDump.METRIC_CATEGORY_METER;
 import static org.apache.flink.runtime.metrics.dump.QueryScopeInfo.INFO_CATEGORY_JM;
+import static org.apache.flink.runtime.metrics.dump.QueryScopeInfo.INFO_CATEGORY_JM_OPERATOR;
 import static org.apache.flink.runtime.metrics.dump.QueryScopeInfo.INFO_CATEGORY_JOB;
 import static org.apache.flink.runtime.metrics.dump.QueryScopeInfo.INFO_CATEGORY_OPERATOR;
 import static org.apache.flink.runtime.metrics.dump.QueryScopeInfo.INFO_CATEGORY_TASK;
@@ -54,6 +60,18 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 @ThreadSafe
 public class MetricStore {
     private static final Logger LOG = LoggerFactory.getLogger(MetricStore.class);
+
+    /**
+     * The set holds the names of the transient metrics which are no longer useful after a subtask
+     * reaches terminal state and shall be removed to avoid misleading users. Note that there may be
+     * other transient metrics, we currently only support cleaning these three.
+     */
+    private static final Set<String> TRANSIENT_METRIC_NAMES =
+            new HashSet<>(
+                    Arrays.asList(
+                            MetricNames.TASK_IDLE_TIME,
+                            MetricNames.TASK_BACK_PRESSURED_TIME,
+                            MetricNames.TASK_BUSY_TIME));
 
     private final ComponentMetricStore jobManager = new ComponentMetricStore();
     private final Map<String, TaskManagerMetricStore> taskManagers = new ConcurrentHashMap<>();
@@ -94,26 +112,46 @@ public class MetricStore {
                     job.getCurrentExecutionAttempts();
             Map<String, Map<Integer, Integer>> jobRepresentativeAttempts =
                     representativeAttempts.compute(
-                            jobId, (k, overwritten) -> new HashMap<>(currentAttempts.size()));
+                            jobId,
+                            (k, overwritten) ->
+                                    CollectionUtil.newHashMapWithExpectedSize(
+                                            currentAttempts.size()));
             currentAttempts.forEach(
                     (vertexId, subtaskAttempts) -> {
                         Map<Integer, Integer> vertexAttempts =
                                 jobRepresentativeAttempts.compute(
                                         vertexId, (k, overwritten) -> new HashMap<>());
-                        JobMetricStore jobMetricStore = this.jobs.get(jobId);
-                        TaskMetricStore taskMetricStore =
-                                jobMetricStore.getTaskMetricStore(vertexId);
+                        Optional<TaskMetricStore> taskMetricStoreOptional =
+                                Optional.ofNullable(this.jobs.get(jobId))
+                                        .map(map -> map.getTaskMetricStore(vertexId));
+
                         // Retains current active subtasks to accommodate dynamic scaling
-                        taskMetricStore.retainSubtasks(subtaskAttempts.keySet());
+                        taskMetricStoreOptional.ifPresent(
+                                taskMetricStore ->
+                                        taskMetricStore.retainSubtasks(subtaskAttempts.keySet()));
+
                         subtaskAttempts.forEach(
                                 (subtaskIndex, attempts) -> {
                                     // Updates representative attempts
                                     vertexAttempts.put(
                                             subtaskIndex, attempts.getRepresentativeAttempt());
                                     // Retains current attempt metrics to avoid memory leak
-                                    taskMetricStore
-                                            .getSubtaskMetricStore(subtaskIndex)
-                                            .retainAttempts(attempts.getCurrentAttempts());
+                                    taskMetricStoreOptional
+                                            .map(
+                                                    taskMetricStore ->
+                                                            taskMetricStore.getSubtaskMetricStore(
+                                                                    subtaskIndex))
+                                            .ifPresent(
+                                                    subtaskMetricStore ->
+                                                            subtaskMetricStore.retainAttempts(
+                                                                    attempts.getCurrentAttempts()));
+                                    // Remove transient metrics for terminal subtasks
+                                    if (attempts.isTerminalState()) {
+                                        taskMetricStoreOptional.ifPresent(
+                                                taskMetricStore ->
+                                                        taskMetricStore.removeTransientMetrics(
+                                                                subtaskIndex));
+                                    }
                                 });
                     });
         }
@@ -145,6 +183,22 @@ public class MetricStore {
      */
     public synchronized ComponentMetricStore getJobManagerMetricStore() {
         return ComponentMetricStore.unmodifiable(jobManager);
+    }
+
+    public synchronized ComponentMetricStore getJobManagerOperatorMetricStore(
+            String jobID, String taskID) {
+        if (jobID == null || taskID == null) {
+            return null;
+        }
+        JobMetricStore job = jobs.get(jobID);
+        if (job == null) {
+            return null;
+        }
+        TaskMetricStore task = job.getTaskMetricStore(taskID);
+        if (task == null) {
+            return null;
+        }
+        return ComponentMetricStore.unmodifiable(task.getJobManagerOperatorMetricStore());
     }
 
     /**
@@ -232,12 +286,6 @@ public class MetricStore {
         return unmodifiableMap(taskManagers);
     }
 
-    /** @deprecated Use semantically equivalent {@link #getJobManagerMetricStore()}. */
-    @Deprecated
-    public synchronized ComponentMetricStore getJobManager() {
-        return ComponentMetricStore.unmodifiable(jobManager);
-    }
-
     @VisibleForTesting
     public void add(MetricDump metric) {
         try {
@@ -247,6 +295,7 @@ public class MetricStore {
             TaskMetricStore task;
             SubtaskMetricStore subtask;
             ComponentMetricStore attempt;
+            ComponentMetricStore jmOperator;
             boolean isRepresentativeAttempt;
 
             String name = info.scope.isEmpty() ? metric.name : info.scope + "." + metric.name;
@@ -257,7 +306,7 @@ public class MetricStore {
 
             switch (info.getCategory()) {
                 case INFO_CATEGORY_JM:
-                    addMetric(jobManager.metrics, name, metric);
+                    addMetric(jobManager, name, metric);
                     break;
                 case INFO_CATEGORY_TM:
                     String tmID = ((QueryScopeInfo.TaskManagerQueryScopeInfo) info).taskManagerID;
@@ -269,13 +318,13 @@ public class MetricStore {
                                         name.lastIndexOf('.'));
                         tm.addGarbageCollectorName(gcName);
                     }
-                    addMetric(tm.metrics, name, metric);
+                    addMetric(tm, name, metric);
                     break;
                 case INFO_CATEGORY_JOB:
                     QueryScopeInfo.JobQueryScopeInfo jobInfo =
                             (QueryScopeInfo.JobQueryScopeInfo) info;
                     job = jobs.computeIfAbsent(jobInfo.jobID, k -> new JobMetricStore());
-                    addMetric(job.metrics, name, metric);
+                    addMetric(job, name, metric);
                     break;
                 case INFO_CATEGORY_TASK:
                     QueryScopeInfo.TaskQueryScopeInfo taskInfo =
@@ -298,7 +347,7 @@ public class MetricStore {
                     attempt =
                             subtask.attempts.computeIfAbsent(
                                     taskInfo.attemptNumber, k -> new ComponentMetricStore());
-                    addMetric(attempt.metrics, name, metric);
+                    addMetric(attempt, name, metric);
                     // If the attempt is representative one, its metrics can be updated to the
                     // subtask and task metric store.
                     if (isRepresentativeAttempt) {
@@ -309,8 +358,8 @@ public class MetricStore {
                          * instead use the concatenation of subtask index and metric name as the
                          * name for those.
                          */
-                        addMetric(subtask.metrics, name, metric);
-                        addMetric(task.metrics, taskInfo.subtaskIndex + "." + name, metric);
+                        addMetric(subtask, name, metric);
+                        addMetric(task, taskInfo.subtaskIndex + "." + name, metric);
                     }
                     break;
                 case INFO_CATEGORY_OPERATOR:
@@ -334,7 +383,7 @@ public class MetricStore {
                     attempt =
                             subtask.attempts.computeIfAbsent(
                                     operatorInfo.attemptNumber, k -> new ComponentMetricStore());
-                    addMetric(attempt.metrics, operatorInfo.operatorName + "." + name, metric);
+                    addMetric(attempt, operatorInfo.operatorName + "." + name, metric);
 
                     // If the attempt is representative one, its metrics can be updated to the
                     // subtask and task metric store.
@@ -344,9 +393,9 @@ public class MetricStore {
                          * don't divide by operator and instead use the concatenation of subtask
                          * index, operator name and metric name as the name.
                          */
-                        addMetric(subtask.metrics, operatorInfo.operatorName + "." + name, metric);
+                        addMetric(subtask, operatorInfo.operatorName + "." + name, metric);
                         addMetric(
-                                task.metrics,
+                                task,
                                 operatorInfo.subtaskIndex
                                         + "."
                                         + operatorInfo.operatorName
@@ -354,6 +403,21 @@ public class MetricStore {
                                         + name,
                                 metric);
                     }
+                    break;
+                case INFO_CATEGORY_JM_OPERATOR:
+                    QueryScopeInfo.JobManagerOperatorQueryScopeInfo jmOperatorInfo =
+                            (QueryScopeInfo.JobManagerOperatorQueryScopeInfo) info;
+                    job = jobs.computeIfAbsent(jmOperatorInfo.jobID, k -> new JobMetricStore());
+                    task =
+                            job.tasks.computeIfAbsent(
+                                    jmOperatorInfo.vertexID, k -> new TaskMetricStore());
+                    jmOperator =
+                            task.jmOperator == null ? new ComponentMetricStore() : task.jmOperator;
+                    addMetric(
+                            jmOperator,
+                            // to distinguish between operators
+                            jmOperatorInfo.operatorName + "." + name,
+                            metric);
                     break;
                 default:
                     LOG.debug("Invalid metric dump category: " + info.getCategory());
@@ -376,33 +440,33 @@ public class MetricStore {
                 == attemptNumber;
     }
 
-    private void addMetric(Map<String, String> target, String name, MetricDump metric) {
+    private void addMetric(ComponentMetricStore target, String name, MetricDump metric) {
         switch (metric.getCategory()) {
             case METRIC_CATEGORY_COUNTER:
                 MetricDump.CounterDump counter = (MetricDump.CounterDump) metric;
-                target.put(name, String.valueOf(counter.count));
+                target.addMetric(name, String.valueOf(counter.count));
                 break;
             case METRIC_CATEGORY_GAUGE:
                 MetricDump.GaugeDump gauge = (MetricDump.GaugeDump) metric;
-                target.put(name, gauge.value);
+                target.addMetric(name, gauge.value);
                 break;
             case METRIC_CATEGORY_HISTOGRAM:
                 MetricDump.HistogramDump histogram = (MetricDump.HistogramDump) metric;
-                target.put(name + "_min", String.valueOf(histogram.min));
-                target.put(name + "_max", String.valueOf(histogram.max));
-                target.put(name + "_mean", String.valueOf(histogram.mean));
-                target.put(name + "_median", String.valueOf(histogram.median));
-                target.put(name + "_stddev", String.valueOf(histogram.stddev));
-                target.put(name + "_p75", String.valueOf(histogram.p75));
-                target.put(name + "_p90", String.valueOf(histogram.p90));
-                target.put(name + "_p95", String.valueOf(histogram.p95));
-                target.put(name + "_p98", String.valueOf(histogram.p98));
-                target.put(name + "_p99", String.valueOf(histogram.p99));
-                target.put(name + "_p999", String.valueOf(histogram.p999));
+                target.addMetric(name + "_min", String.valueOf(histogram.min));
+                target.addMetric(name + "_max", String.valueOf(histogram.max));
+                target.addMetric(name + "_mean", String.valueOf(histogram.mean));
+                target.addMetric(name + "_median", String.valueOf(histogram.median));
+                target.addMetric(name + "_stddev", String.valueOf(histogram.stddev));
+                target.addMetric(name + "_p75", String.valueOf(histogram.p75));
+                target.addMetric(name + "_p90", String.valueOf(histogram.p90));
+                target.addMetric(name + "_p95", String.valueOf(histogram.p95));
+                target.addMetric(name + "_p98", String.valueOf(histogram.p98));
+                target.addMetric(name + "_p99", String.valueOf(histogram.p99));
+                target.addMetric(name + "_p999", String.valueOf(histogram.p999));
                 break;
             case METRIC_CATEGORY_METER:
                 MetricDump.MeterDump meter = (MetricDump.MeterDump) metric;
-                target.put(name, String.valueOf(meter.rate));
+                target.addMetric(name, String.valueOf(meter.rate));
                 break;
         }
     }
@@ -415,6 +479,7 @@ public class MetricStore {
     @ThreadSafe
     public static class ComponentMetricStore {
         public final Map<String, String> metrics;
+        public final Set<String> transientMetrics;
 
         private ComponentMetricStore() {
             this(new ConcurrentHashMap<>());
@@ -422,6 +487,7 @@ public class MetricStore {
 
         private ComponentMetricStore(Map<String, String> metrics) {
             this.metrics = checkNotNull(metrics);
+            this.transientMetrics = ConcurrentHashMap.newKeySet();
         }
 
         public String getMetric(String name) {
@@ -438,6 +504,28 @@ public class MetricStore {
                 return null;
             }
             return new ComponentMetricStore(unmodifiableMap(source.metrics));
+        }
+
+        void addMetric(String name, String value) {
+            metrics.put(name, value);
+            if (isTransientMetric(name)) {
+                transientMetrics.add(name);
+            }
+        }
+
+        boolean isTransientMetric(String name) {
+            String metricName = name.substring(name.lastIndexOf('.') + 1);
+            return TRANSIENT_METRIC_NAMES.contains(metricName);
+        }
+
+        void removeTransientMetrics(Set<String> metricsToRemove) {
+            metricsToRemove.stream()
+                    .filter(metrics::containsKey)
+                    .forEach(
+                            key -> {
+                                metrics.remove(key);
+                                transientMetrics.remove(key);
+                            });
         }
     }
 
@@ -483,15 +571,19 @@ public class MetricStore {
     @ThreadSafe
     public static class TaskMetricStore extends ComponentMetricStore {
         private final Map<Integer, SubtaskMetricStore> subtasks;
+        private final ComponentMetricStore jmOperator;
 
         private TaskMetricStore() {
-            this(new ConcurrentHashMap<>(), new ConcurrentHashMap<>());
+            this(new ConcurrentHashMap<>(), new ConcurrentHashMap<>(), new ComponentMetricStore());
         }
 
         private TaskMetricStore(
-                Map<String, String> metrics, Map<Integer, SubtaskMetricStore> subtasks) {
+                Map<String, String> metrics,
+                Map<Integer, SubtaskMetricStore> subtasks,
+                ComponentMetricStore jmOperator) {
             super(metrics);
             this.subtasks = checkNotNull(subtasks);
+            this.jmOperator = checkNotNull(jmOperator);
         }
 
         public SubtaskMetricStore getSubtaskMetricStore(int subtaskIndex) {
@@ -502,8 +594,43 @@ public class MetricStore {
             return unmodifiableMap(subtasks);
         }
 
+        @Override
+        boolean isTransientMetric(String name) {
+            return name.matches("^\\d+\\..*") && super.isTransientMetric(name);
+        }
+
         void retainSubtasks(Set<Integer> activeSubtasks) {
+            // Retain metrics of pattern subtaskIndex.metricName which are directly stored in
+            // TaskMetricStore
+            metrics.keySet()
+                    .removeIf(
+                            key -> {
+                                // To prevent errors in metric parsing, here we only
+                                // clean up metrics with a pattern of
+                                // "subtaskIndex.metricName"
+                                String index = key.substring(0, Math.max(key.indexOf('.'), 0));
+                                return index.matches("\\d+")
+                                        && !activeSubtasks.contains(Integer.parseInt(index));
+                            });
+
             subtasks.keySet().retainAll(activeSubtasks);
+        }
+
+        void removeTransientMetrics(int subtaskIndex) {
+            if (subtasks.containsKey(subtaskIndex)) {
+                // Remove in both places as task metrics are duplicated in task metric store and
+                // subtask metric store.
+                Set<String> metricsToRemove =
+                        transientMetrics.stream()
+                                .filter(k -> k.startsWith(subtaskIndex + "."))
+                                .collect(Collectors.toSet());
+                removeTransientMetrics(metricsToRemove);
+                subtasks.get(subtaskIndex).removeTransientMetrics();
+            }
+        }
+
+        public ComponentMetricStore getJobManagerOperatorMetricStore() {
+            return jmOperator;
         }
 
         private static TaskMetricStore unmodifiable(TaskMetricStore source) {
@@ -511,7 +638,9 @@ public class MetricStore {
                 return null;
             }
             return new TaskMetricStore(
-                    unmodifiableMap(source.metrics), unmodifiableMap(source.subtasks));
+                    unmodifiableMap(source.metrics),
+                    unmodifiableMap(source.subtasks),
+                    ComponentMetricStore.unmodifiable(source.jmOperator));
         }
     }
 
@@ -544,6 +673,12 @@ public class MetricStore {
                     .removeIf(
                             attempt ->
                                     attempt < latestAttempt && !currentAttempts.contains(attempt));
+        }
+
+        void removeTransientMetrics() {
+            attempts.values()
+                    .forEach(attempt -> attempt.removeTransientMetrics(attempt.transientMetrics));
+            removeTransientMetrics(transientMetrics);
         }
 
         private static SubtaskMetricStore unmodifiable(SubtaskMetricStore source) {

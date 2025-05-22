@@ -19,20 +19,25 @@
 package org.apache.flink.table.planner.plan;
 
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.legacy.table.sources.StreamTableSource;
+import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.catalog.CatalogBaseTable;
 import org.apache.flink.table.catalog.CatalogTable;
-import org.apache.flink.table.catalog.CatalogTableImpl;
 import org.apache.flink.table.catalog.CatalogView;
 import org.apache.flink.table.catalog.ConnectorCatalogTable;
 import org.apache.flink.table.catalog.ObjectIdentifier;
 import org.apache.flink.table.catalog.QueryOperationCatalogView;
 import org.apache.flink.table.catalog.ResolvedCatalogBaseTable;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
+import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.descriptors.ConnectorDescriptorValidator;
 import org.apache.flink.table.descriptors.DescriptorProperties;
 import org.apache.flink.table.factories.TableFactoryUtil;
+import org.apache.flink.table.legacy.sources.LookupableTableSource;
+import org.apache.flink.table.legacy.sources.TableSource;
 import org.apache.flink.table.planner.calcite.FlinkSqlNameMatcher;
+import org.apache.flink.table.planner.catalog.CatalogSchemaModel;
 import org.apache.flink.table.planner.catalog.CatalogSchemaTable;
 import org.apache.flink.table.planner.catalog.QueryOperationCatalogViewTable;
 import org.apache.flink.table.planner.catalog.SqlCatalogViewTable;
@@ -41,19 +46,23 @@ import org.apache.flink.table.planner.plan.schema.FlinkPreparingTableBase;
 import org.apache.flink.table.planner.plan.schema.LegacyCatalogSourceTable;
 import org.apache.flink.table.planner.plan.schema.LegacyTableSourceTable;
 import org.apache.flink.table.planner.plan.stats.FlinkStatistic;
-import org.apache.flink.table.sources.LookupableTableSource;
-import org.apache.flink.table.sources.StreamTableSource;
-import org.apache.flink.table.sources.TableSource;
 import org.apache.flink.table.utils.TableSchemaUtils;
+
+import org.apache.flink.shaded.guava33.com.google.common.collect.Iterables;
 
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.jdbc.CalciteSchema;
+import org.apache.calcite.jdbc.SimpleCalciteSchema;
 import org.apache.calcite.plan.RelOptSchema;
 import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.sql.validate.SqlNameMatchers;
+import org.apache.calcite.sql.validate.SqlValidatorUtil;
+import org.apache.calcite.util.Util;
+
+import javax.annotation.Nullable;
 
 import java.util.Collections;
 import java.util.List;
@@ -84,7 +93,7 @@ public class FlinkCalciteCatalogReader extends CalciteCatalogReader {
     }
 
     @Override
-    public Prepare.PreparingTable getTable(List<String> names) {
+    public @Nullable Prepare.PreparingTable getTable(List<String> names) {
         Prepare.PreparingTable originRelOptTable = super.getTable(names);
         if (originRelOptTable == null) {
             return null;
@@ -101,6 +110,31 @@ public class FlinkCalciteCatalogReader extends CalciteCatalogReader {
                 return originRelOptTable;
             }
         }
+    }
+
+    public @Nullable CatalogSchemaModel getModel(List<String> names) {
+        // ----- COPIED PARTIALLY FROM CalciteCatalogReader#getFunctionsFrom -----
+        for (List<String> schemaNames : getSchemaPaths()) {
+            CalciteSchema calciteSchema =
+                    SqlValidatorUtil.getSchema(
+                            rootSchema,
+                            Iterables.concat(schemaNames, Util.skipLast(names)),
+                            nameMatcher);
+
+            if (calciteSchema != null) {
+                final String name = Util.last(names);
+                boolean caseSensitive = nameMatcher.isCaseSensitive();
+                // ----- FLINK MODIFICATION START -----
+                SimpleCalciteSchema.ModelEntry modelEntry =
+                        ((SimpleCalciteSchema) calciteSchema).getModel(name, caseSensitive);
+                if (modelEntry != null) {
+                    return modelEntry.getModel();
+                }
+                // ----- FLINK MODIFICATION END -----
+            }
+        }
+        // ----- COPY END -----
+        return null;
     }
 
     /** Translate this {@link CatalogSchemaTable} into Flink source table. */
@@ -230,15 +264,23 @@ public class FlinkCalciteCatalogReader extends CalciteCatalogReader {
                 // DataTypeUtils#removeTimeAttribute}
                 ResolvedCatalogTable originTable =
                         schemaTable.getContextResolvedTable().getResolvedTable();
+                ResolvedSchema resolvedSchemaWithRemovedTimeAttribute =
+                        TableSchemaUtils.removeTimeAttributeFromResolvedSchema(
+                                originTable.getResolvedSchema());
                 TableFactoryUtil.findAndCreateTableSource(
-                        schemaTable.getContextResolvedTable().getCatalog().orElse(null),
                         schemaTable.getContextResolvedTable().getIdentifier(),
-                        new CatalogTableImpl(
-                                TableSchemaUtils.removeTimeAttributeFromResolvedSchema(
-                                        originTable.getResolvedSchema()),
-                                originTable.getPartitionKeys(),
-                                originTable.getOptions(),
-                                originTable.getComment()),
+                        new ResolvedCatalogTable(
+                                CatalogTable.newBuilder()
+                                        .schema(
+                                                Schema.newBuilder()
+                                                        .fromResolvedSchema(
+                                                                resolvedSchemaWithRemovedTimeAttribute)
+                                                        .build())
+                                        .comment(originTable.getComment())
+                                        .partitionKeys(originTable.getPartitionKeys())
+                                        .options(originTable.getOptions())
+                                        .build(),
+                                resolvedSchemaWithRemovedTimeAttribute),
                         new Configuration(),
                         schemaTable.isTemporary());
                 // success, then we will use the legacy factories

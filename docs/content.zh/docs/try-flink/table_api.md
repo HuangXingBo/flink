@@ -44,7 +44,7 @@ Flink 的 Table API 可以简化数据分析、构建数据流水线以及 ETL �
 ## 困难求助
 
 如果遇到问题，可以参考 [社区支持资源](https://flink.apache.org/community.html)。
-Flink 的 [用户邮件列表](https://flink.apache.org/community.html#mailing-lists) 是 Apahe 项目中最活跃的一个，这也是快速寻求帮助的重要途径。
+Flink 的 [用户邮件列表](https://flink.apache.org/community.html#mailing-lists) 是 Apache 项目中最活跃的一个，这也是快速寻求帮助的重要途径。
 
 {{< hint info >}}
 在 Windows 环境下，如果用来生成数据的 docker 容器启动失败，请检查使用的脚本是否正确。
@@ -293,8 +293,8 @@ public static Table report(Table transactions) {
 在 `table-walkthrough` 目录下启动 docker-compose 脚本。
 
 ```bash
-$ docker-compose build
-$ docker-compose up -d
+$ docker compose build
+$ docker compose up -d
 ```
 
 运行中的作业信息可以通过 [Flink console](http://localhost:8082/) 查看。
@@ -304,7 +304,7 @@ $ docker-compose up -d
 结果数据在 MySQL 中查看。
 
 ```bash
-$ docker-compose exec mysql mysql -Dsql-demo -usql-demo -pdemo-sql
+$ docker compose exec mysql mysql -Dsql-demo -usql-demo -pdemo-sql
 
 mysql> use sql-demo;
 Database changed

@@ -19,8 +19,11 @@
 
 package org.apache.flink.runtime.scheduler.adaptivebatch;
 
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.configuration.BatchExecutionOptions;
+import org.apache.flink.core.failure.FailureEnricher;
+import org.apache.flink.core.failure.TestingFailureEnricher;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutorServiceAdapter;
 import org.apache.flink.runtime.execution.ExecutionState;
@@ -30,7 +33,8 @@ import org.apache.flink.runtime.executiongraph.ExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionJobVertex;
 import org.apache.flink.runtime.executiongraph.ExecutionVertex;
 import org.apache.flink.runtime.executiongraph.ResultPartitionBytes;
-import org.apache.flink.runtime.executiongraph.failover.flip1.FixedDelayRestartBackoffTimeStrategy;
+import org.apache.flink.runtime.executiongraph.failover.FixedDelayRestartBackoffTimeStrategy.FixedDelayRestartBackoffTimeStrategyFactory;
+import org.apache.flink.runtime.executiongraph.failover.RestartBackoffTimeStrategy;
 import org.apache.flink.runtime.io.network.partition.PartitionNotFoundException;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionID;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
@@ -42,6 +46,7 @@ import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobVertex;
 import org.apache.flink.runtime.scheduler.DefaultSchedulerBuilder;
 import org.apache.flink.runtime.scheduler.SchedulerBase;
+import org.apache.flink.runtime.scheduler.exceptionhistory.RootExceptionHistoryEntry;
 import org.apache.flink.runtime.taskmanager.TaskExecutionState;
 import org.apache.flink.runtime.testtasks.NoOpInvokable;
 import org.apache.flink.testutils.TestingUtils;
@@ -54,21 +59,27 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import javax.annotation.Nullable;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import static org.apache.flink.runtime.scheduler.DefaultSchedulerBuilder.createCustomParallelismDecider;
+import static org.apache.flink.runtime.scheduler.DefaultSchedulerTest.runCloseAsyncCompletesInMainThreadTest;
 import static org.apache.flink.runtime.scheduler.SchedulerTestingUtils.createFailedTaskExecutionState;
 import static org.apache.flink.runtime.scheduler.SchedulerTestingUtils.createFinishedTaskExecutionState;
 import static org.apache.flink.runtime.scheduler.adaptivebatch.DefaultVertexParallelismAndInputInfosDeciderTest.createDecider;
-import static org.apache.flink.shaded.guava30.com.google.common.collect.Iterables.getOnlyElement;
+import static org.apache.flink.runtime.util.JobVertexConnectionUtils.connectNewDataSetAsInput;
+import static org.apache.flink.shaded.guava33.com.google.common.collect.Iterables.getOnlyElement;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Test for {@link AdaptiveBatchScheduler}. */
@@ -79,7 +90,7 @@ class AdaptiveBatchSchedulerTest {
     private static final long SUBPARTITION_BYTES = 100L;
 
     @RegisterExtension
-    static final TestExecutorExtension<ScheduledExecutorService> EXECUTOR_RESOURCE =
+    private static final TestExecutorExtension<ScheduledExecutorService> EXECUTOR_RESOURCE =
             TestingUtils.defaultExecutorExtension();
 
     private ComponentMainThreadExecutor mainThreadExecutor;
@@ -89,6 +100,23 @@ class AdaptiveBatchSchedulerTest {
     void setUp() {
         mainThreadExecutor = ComponentMainThreadExecutorServiceAdapter.forMainThread();
         taskRestartExecutor = new ManuallyTriggeredScheduledExecutor();
+    }
+
+    @Test
+    void testVertexInitializationFailureIsLabeled() throws Exception {
+        final JobGraph jobGraph = createBrokenJobGraph();
+        final TestingFailureEnricher failureEnricher = new TestingFailureEnricher();
+        final RestartBackoffTimeStrategy restartStrategy =
+                new FixedDelayRestartBackoffTimeStrategyFactory(Integer.MAX_VALUE, 0L).create();
+        final SchedulerBase scheduler =
+                createScheduler(jobGraph, Collections.singleton(failureEnricher), restartStrategy);
+        // Triggered failure on initializeJobVertex that should be labeled
+        scheduler.startScheduling();
+        final Iterable<RootExceptionHistoryEntry> exceptionHistory =
+                scheduler.requestJob().getExceptionHistory();
+        final RootExceptionHistoryEntry failure = exceptionHistory.iterator().next();
+        assertThat(failure.getException()).hasMessageContaining("The failure is not recoverable");
+        assertThat(failure.getFailureLabels()).isEqualTo(failureEnricher.getFailureLabels());
     }
 
     @Test
@@ -131,11 +159,15 @@ class AdaptiveBatchSchedulerTest {
         final JobVertex map = createJobVertex("map", -1);
         final JobVertex sink = createJobVertex("sink", -1);
 
-        map.connectNewDataSetAsInput(
-                source, DistributionPattern.POINTWISE, ResultPartitionType.BLOCKING);
-        sink.connectNewDataSetAsInput(
-                map, DistributionPattern.POINTWISE, ResultPartitionType.BLOCKING);
-        map.getProducedDataSets().get(0).getConsumers().get(0).setForward(true);
+        connectNewDataSetAsInput(
+                map, source, DistributionPattern.POINTWISE, ResultPartitionType.BLOCKING);
+        connectNewDataSetAsInput(
+                sink,
+                map,
+                DistributionPattern.POINTWISE,
+                ResultPartitionType.BLOCKING,
+                false,
+                true);
 
         SchedulerBase scheduler =
                 createScheduler(
@@ -161,20 +193,18 @@ class AdaptiveBatchSchedulerTest {
         // trigger source finished.
         transitionExecutionsState(scheduler, ExecutionState.FINISHED, source);
         assertThat(mapExecutionJobVertex.getParallelism()).isEqualTo(5);
-        assertThat(sinkExecutionJobVertex.getParallelism()).isEqualTo(-1);
+        assertThat(sinkExecutionJobVertex.getParallelism()).isEqualTo(5);
 
         // trigger map finished.
         transitionExecutionsState(scheduler, ExecutionState.FINISHED, map);
         assertThat(mapExecutionJobVertex.getParallelism()).isEqualTo(5);
         assertThat(sinkExecutionJobVertex.getParallelism()).isEqualTo(5);
-
         // check that the jobGraph is updated
         assertThat(sink.getParallelism()).isEqualTo(5);
 
         // check aggregatedInputDataBytes of each ExecutionVertex calculated. Total number of
-        // subpartitions of map is ceil(128 / 5) * 5 = 130, so total bytes sink consume is 130 *
-        // SUBPARTITION_BYTES = 13_000L.
-        checkAggregatedInputDataBytesIsCalculated(sinkExecutionJobVertex, 13_000L);
+        // subpartitions of map is 5, so total bytes sink consume is 5 * SUBPARTITION_BYTES = 500L.
+        checkAggregatedInputDataBytesIsCalculated(sinkExecutionJobVertex, 500L);
     }
 
     @Test
@@ -196,9 +226,7 @@ class AdaptiveBatchSchedulerTest {
                         .setDelayExecutor(taskRestartExecutor)
                         .setPartitionTracker(partitionTracker)
                         .setRestartBackoffTimeStrategy(
-                                new FixedDelayRestartBackoffTimeStrategy
-                                                .FixedDelayRestartBackoffTimeStrategyFactory(10, 0)
-                                        .create())
+                                new FixedDelayRestartBackoffTimeStrategyFactory(10, 0).create())
                         .setVertexParallelismAndInputInfosDecider(
                                 createCustomParallelismDecider(maxParallelism))
                         .setDefaultMaxParallelism(maxParallelism)
@@ -250,13 +278,15 @@ class AdaptiveBatchSchedulerTest {
         final IntermediateDataSetID intermediateDataSetId = new IntermediateDataSetID();
 
         // sink consume the same result twice
-        sink.connectNewDataSetAsInput(
+        connectNewDataSetAsInput(
+                sink,
                 source,
                 DistributionPattern.ALL_TO_ALL,
                 ResultPartitionType.BLOCKING,
                 intermediateDataSetId,
                 false);
-        sink.connectNewDataSetAsInput(
+        connectNewDataSetAsInput(
+                sink,
                 source,
                 DistributionPattern.ALL_TO_ALL,
                 ResultPartitionType.BLOCKING,
@@ -284,8 +314,8 @@ class AdaptiveBatchSchedulerTest {
     void testParallelismDecidedVerticesCanBeInitializedEarlier() throws Exception {
         final JobVertex source = createJobVertex("source", 8);
         final JobVertex sink = createJobVertex("sink", 8);
-        sink.connectNewDataSetAsInput(
-                source, DistributionPattern.ALL_TO_ALL, ResultPartitionType.BLOCKING);
+        connectNewDataSetAsInput(
+                sink, source, DistributionPattern.ALL_TO_ALL, ResultPartitionType.BLOCKING);
 
         SchedulerBase scheduler =
                 createScheduler(new JobGraph(new JobID(), "test job", source, sink));
@@ -330,6 +360,50 @@ class AdaptiveBatchSchedulerTest {
         assertThat(source.getParallelism()).isEqualTo(8);
     }
 
+    @Test
+    void testMergeDynamicParallelismFutures() {
+        List<CompletableFuture<Integer>> sourceParallelismFutures = new ArrayList<>();
+
+        CompletableFuture<Integer> sourceParallelismFuture =
+                CompletableFuture.completedFuture(ExecutionConfig.PARALLELISM_DEFAULT);
+        sourceParallelismFutures.add(sourceParallelismFuture);
+
+        // Testing scenarios without effective parallelism
+        CompletableFuture<Integer> mergedSourceParallelismFuture =
+                AdaptiveBatchScheduler.mergeDynamicParallelismFutures(sourceParallelismFutures);
+        assertThat(mergedSourceParallelismFuture.join())
+                .isEqualTo(ExecutionConfig.PARALLELISM_DEFAULT);
+
+        CompletableFuture<Integer> sourceParallelismFuture1 = CompletableFuture.completedFuture(1);
+        CompletableFuture<Integer> sourceParallelismFuture2 = CompletableFuture.completedFuture(2);
+        CompletableFuture<Integer> sourceParallelismFuture4 = CompletableFuture.completedFuture(4);
+
+        sourceParallelismFutures.add(sourceParallelismFuture1);
+        sourceParallelismFutures.add(sourceParallelismFuture2);
+        sourceParallelismFutures.add(sourceParallelismFuture4);
+
+        // Testing scenarios with multiple sources in ExecutionJobVertex
+        mergedSourceParallelismFuture =
+                AdaptiveBatchScheduler.mergeDynamicParallelismFutures(sourceParallelismFutures);
+        assertThat(mergedSourceParallelismFuture.join()).isEqualTo(4);
+    }
+
+    @Test
+    void testCloseAsyncReturnsMainThreadFuture() throws Exception {
+        final ScheduledExecutorService scheduledExecutorServiceForMainThread =
+                Executors.newSingleThreadScheduledExecutor();
+        try {
+            runCloseAsyncCompletesInMainThreadTest(
+                    scheduledExecutorServiceForMainThread,
+                    (mainThread, checkpointsCleaner) ->
+                            createSchedulerBuilder(createJobGraph(), mainThread)
+                                    .setCheckpointCleaner(checkpointsCleaner)
+                                    .buildAdaptiveBatchJobScheduler());
+        } finally {
+            scheduledExecutorServiceForMainThread.shutdownNow();
+        }
+    }
+
     void testUserConfiguredMaxParallelism(
             int globalMinParallelism,
             int globalMaxParallelism,
@@ -341,8 +415,8 @@ class AdaptiveBatchSchedulerTest {
         final JobVertex sink = createJobVertex("sink", -1);
         sink.setMaxParallelism(userConfiguredMaxParallelism);
 
-        sink.connectNewDataSetAsInput(
-                source, DistributionPattern.POINTWISE, ResultPartitionType.BLOCKING);
+        connectNewDataSetAsInput(
+                sink, source, DistributionPattern.POINTWISE, ResultPartitionType.BLOCKING);
 
         SchedulerBase scheduler =
                 createScheduler(
@@ -412,7 +486,7 @@ class AdaptiveBatchSchedulerTest {
                 taskExecutionState =
                         createFailedTaskExecutionState(execution.getAttemptId(), throwable);
             } else {
-                throw new UnsupportedOperationException("Unsupported state " + state);
+                taskExecutionState = new TaskExecutionState(execution.getAttemptId(), state);
             }
             scheduler.updateTaskExecutionState(taskExecutionState);
         }
@@ -460,13 +534,33 @@ class AdaptiveBatchSchedulerTest {
     }
 
     public JobGraph createJobGraph() {
+        return createJobGraph(false);
+    }
+
+    private JobGraph createBrokenJobGraph() {
+        // this will break the JobGraph by using the same dataset id twice
+        return createJobGraph(true);
+    }
+
+    public JobGraph createJobGraph(boolean broken) {
         final JobVertex source1 = createJobVertex("source1", SOURCE_PARALLELISM_1);
         final JobVertex source2 = createJobVertex("source2", SOURCE_PARALLELISM_2);
         final JobVertex sink = createJobVertex("sink", -1);
-        sink.connectNewDataSetAsInput(
-                source1, DistributionPattern.POINTWISE, ResultPartitionType.BLOCKING);
-        sink.connectNewDataSetAsInput(
-                source2, DistributionPattern.POINTWISE, ResultPartitionType.BLOCKING);
+        final IntermediateDataSetID sharedDataSetId = new IntermediateDataSetID();
+        connectNewDataSetAsInput(
+                sink,
+                source1,
+                DistributionPattern.POINTWISE,
+                ResultPartitionType.BLOCKING,
+                broken ? sharedDataSetId : new IntermediateDataSetID(),
+                false);
+        connectNewDataSetAsInput(
+                sink,
+                source2,
+                DistributionPattern.POINTWISE,
+                ResultPartitionType.BLOCKING,
+                broken ? sharedDataSetId : new IntermediateDataSetID(),
+                false);
         return new JobGraph(new JobID(), "test job", source1, source2, sink);
     }
 
@@ -482,11 +576,31 @@ class AdaptiveBatchSchedulerTest {
             VertexParallelismAndInputInfosDecider vertexParallelismAndInputInfosDecider,
             int defaultMaxParallelism)
             throws Exception {
-        return new DefaultSchedulerBuilder(
-                        jobGraph, mainThreadExecutor, EXECUTOR_RESOURCE.getExecutor())
-                .setDelayExecutor(taskRestartExecutor)
+        return createSchedulerBuilder(jobGraph)
                 .setVertexParallelismAndInputInfosDecider(vertexParallelismAndInputInfosDecider)
                 .setDefaultMaxParallelism(defaultMaxParallelism)
                 .buildAdaptiveBatchJobScheduler();
+    }
+
+    private SchedulerBase createScheduler(
+            JobGraph jobGraph,
+            Collection<FailureEnricher> failureEnrichers,
+            RestartBackoffTimeStrategy strategy)
+            throws Exception {
+        return createSchedulerBuilder(jobGraph)
+                .setRestartBackoffTimeStrategy(strategy)
+                .setFailureEnrichers(failureEnrichers)
+                .buildAdaptiveBatchJobScheduler();
+    }
+
+    private DefaultSchedulerBuilder createSchedulerBuilder(JobGraph jobGraph) {
+        return createSchedulerBuilder(jobGraph, mainThreadExecutor);
+    }
+
+    private DefaultSchedulerBuilder createSchedulerBuilder(
+            JobGraph jobGraph, ComponentMainThreadExecutor mainThreadExecutor) {
+        return new DefaultSchedulerBuilder(
+                        jobGraph, mainThreadExecutor, EXECUTOR_RESOURCE.getExecutor())
+                .setDelayExecutor(taskRestartExecutor);
     }
 }

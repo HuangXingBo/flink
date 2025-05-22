@@ -51,7 +51,7 @@ import org.apache.flink.runtime.minicluster.MiniCluster;
 import org.apache.flink.runtime.minicluster.TestingMiniCluster;
 import org.apache.flink.runtime.minicluster.TestingMiniClusterConfiguration;
 import org.apache.flink.runtime.resourcemanager.StandaloneResourceManagerFactory;
-import org.apache.flink.runtime.rest.JobRestEndpointFactory;
+import org.apache.flink.runtime.rest.ApplicationRestEndpointFactory;
 import org.apache.flink.runtime.testutils.CommonTestUtils;
 import org.apache.flink.runtime.testutils.TestingJobResultStore;
 import org.apache.flink.testutils.TestingUtils;
@@ -91,7 +91,7 @@ class ApplicationDispatcherBootstrapITCase {
                     new DefaultDispatcherRunnerFactory(
                             applicationDispatcherLeaderProcessFactoryFactory),
                     StandaloneResourceManagerFactory.getInstance(),
-                    JobRestEndpointFactory.INSTANCE);
+                    ApplicationRestEndpointFactory.INSTANCE);
         };
     }
 
@@ -171,8 +171,10 @@ class ApplicationDispatcherBootstrapITCase {
         // having a dirty entry in the JobResultStore should make the ApplicationDispatcherBootstrap
         // implementation fail to submit the job
         final JobResultStore jobResultStore = new EmbeddedJobResultStore();
-        jobResultStore.createDirtyResult(
-                new JobResultEntry(TestingJobResultStore.createSuccessfulJobResult(jobId)));
+        jobResultStore
+                .createDirtyResultAsync(
+                        new JobResultEntry(TestingJobResultStore.createSuccessfulJobResult(jobId)))
+                .get();
         final EmbeddedHaServicesWithLeadershipControl haServices =
                 new EmbeddedHaServicesWithLeadershipControl(EXECUTOR_EXTENSION.getExecutor()) {
 
@@ -202,8 +204,8 @@ class ApplicationDispatcherBootstrapITCase {
                         "The job's main method shouldn't have been succeeded due to a DuplicateJobSubmissionException.")
                 .hasAtLeastOneElementOfType(DuplicateJobSubmissionException.class);
 
-        assertThat(jobResultStore.hasDirtyJobResultEntry(jobId)).isFalse();
-        assertThat(jobResultStore.hasCleanJobResultEntry(jobId)).isTrue();
+        assertThat(jobResultStore.hasDirtyJobResultEntryAsync(jobId).get()).isFalse();
+        assertThat(jobResultStore.hasCleanJobResultEntryAsync(jobId).get()).isTrue();
     }
 
     @Test

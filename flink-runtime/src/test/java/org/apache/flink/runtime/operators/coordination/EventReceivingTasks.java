@@ -29,7 +29,7 @@ import org.apache.flink.util.concurrent.FutureUtils;
 import org.apache.flink.util.concurrent.ScheduledExecutor;
 import org.apache.flink.util.concurrent.ScheduledExecutorServiceAdapter;
 
-import org.jetbrains.annotations.NotNull;
+import javax.annotation.Nonnull;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -96,10 +96,13 @@ public class EventReceivingTasks implements SubtaskAccess.SubtaskAccessFactory {
     }
 
     public List<OperatorEvent> getSentEventsForSubtask(int subtaskIndex) {
-        return events.stream()
-                .filter((evt) -> evt.subtask == subtaskIndex)
-                .map((evt) -> evt.event)
-                .collect(Collectors.toList());
+
+        // Create a new array list to avoid concurrent modification during processing the events
+        return new ArrayList<>(events)
+                .stream()
+                        .filter((evt) -> evt.subtask == subtaskIndex)
+                        .map((evt) -> evt.event)
+                        .collect(Collectors.toList());
     }
 
     // ------------------------------------------------------------------------
@@ -135,7 +138,7 @@ public class EventReceivingTasks implements SubtaskAccess.SubtaskAccessFactory {
     // ------------------------------------------------------------------------
 
     /** A combination of an {@link OperatorEvent} and the target subtask it is sent to. */
-    public static final class EventWithSubtask {
+    static final class EventWithSubtask {
 
         public final OperatorEvent event;
         public final int subtask;
@@ -170,11 +173,12 @@ public class EventReceivingTasks implements SubtaskAccess.SubtaskAccessFactory {
 
     // ------------------------------------------------------------------------
 
-    private final class TestSubtaskAccess implements SubtaskAccess {
+    final class TestSubtaskAccess implements SubtaskAccess {
 
         private final ExecutionAttemptID executionAttemptId;
         private final CompletableFuture<?> running;
         private final int subtaskIndex;
+        private final List<Throwable> taskFailoverReasons = new ArrayList<>();
 
         private TestSubtaskAccess(int subtaskIndex, int attemptNumber, boolean isRunning) {
             this.subtaskIndex = subtaskIndex;
@@ -231,7 +235,11 @@ public class EventReceivingTasks implements SubtaskAccess.SubtaskAccessFactory {
 
         @Override
         public void triggerTaskFailover(Throwable cause) {
-            // ignore this in the tests
+            taskFailoverReasons.add(cause);
+        }
+
+        public List<Throwable> getTaskFailoverReasons() {
+            return taskFailoverReasons;
         }
     }
 
@@ -274,7 +282,7 @@ public class EventReceivingTasks implements SubtaskAccess.SubtaskAccessFactory {
         public void assertRunningInMainThread() {}
 
         @Override
-        public void execute(@NotNull Runnable command) {
+        public void execute(@Nonnull Runnable command) {
             scheduledExecutor.execute(command);
         }
     }
